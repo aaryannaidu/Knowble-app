@@ -1,50 +1,82 @@
 # Welcome to your Expo app 👋
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+## 🚀 Knowble-app Installation & Setup
 
-## Get started
+### Prerequisites
+- **Node.js** (v16 or newer recommended)
+- **npm** (v8 or newer recommended)
+- **Expo CLI** (install globally with `npm install -g expo-cli`)
 
-1. Install dependencies
-
+### Installation Steps
+1. **Clone the repository**
+   ```bash
+   git clone <your-repo-url>
+   cd Knowble-app
+   ```
+2. **Install dependencies**
    ```bash
    npm install
    ```
-
-2. Start the app
-
+3. **Start the app**
    ```bash
    npx expo start
    ```
+   This will open the Expo Dev Tools in your browser. You can run the app on an emulator, simulator, or your physical device using the QR code.
 
-In the output, you'll find options to open the app in a
+---
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+## 🛠️ Project Workflow
+- The app uses **file-based routing** (see the `app/` directory).
+- Main screens and features are organized into folders:
+  - `(auth)`: Authentication (login, register, etc.)
+  - `(drawer)`: Drawer navigation (profile, settings, saved, etc.)
+  - `(tabs)`: Tab navigation (home, categories, search, subscriptions, etc.)
+  - `components/`: Reusable UI components (e.g., `VideoCard`, `NotificationProvider`)
+- To add a new screen, create a new file or folder in the appropriate section of `app/`.
+- For shared logic or UI, add to `components/`.
+- **Development:**
+  - Make a new branch for your feature or fix.
+  - Commit your changes with clear messages.
+  - Open a Pull Request (PR) for review.
+  - Follow code style and naming conventions.
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+---
 
-## Get a fresh project
+## 🧩 Component & Folder Overview
+- **app/(auth)**: Authentication screens and logic
+- **app/(drawer)**: Drawer navigation and related screens (profile, settings, etc.)
+- **app/(tabs)**: Main tabbed navigation (home, categories, search, etc.)
+- **app/components/**: Shared React components (cards, providers, etc.)
+- **app/categories/**: Category-specific screens
+- **app/channels/**: Channel-specific screens
+- **app/comments/**: Video comments screens
+- **app/microcourses/**: Microcourse-specific screens
+- **app/watch/**: Video watching screens
+- **app/config.ts**: App configuration
 
-When you're ready, run:
+---
 
-```bash
-npm run reset-project
-```
+## 🤝 Contributing
+1. **Fork** the repository on GitHub.
+2. **Clone** your fork locally.
+3. **Create a new branch** for your feature or bugfix:
+   ```bash
+   git checkout -b feature/your-feature-name
+   ```
+4. **Make your changes** and commit:
+   ```bash
+   git add .
+   git commit -m "Add: your message here"
+   ```
+5. **Push** to your fork and **open a Pull Request**.
+6. Wait for review and merge!
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+---
 
-## Learn more
+## 📚 Learn More
+- [Expo documentation](https://docs.expo.dev/)
+- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/)
+- [Expo on GitHub](https://github.com/expo/expo)
+- [Discord community](https://chat.expo.dev)
 
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+---
