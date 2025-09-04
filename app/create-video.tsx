@@ -28,7 +28,7 @@ export default function CreateVideoScreen() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState<string | null>(null);
-  const [categories, setCategories] = useState<Array<{id: string, name: string}>>([]);
+  const [categories, setCategories] = useState<{id: string, name: string}[]>([]);
   const [video, setVideo] = useState<any>(null);
   const [thumbnail, setThumbnail] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -102,7 +102,7 @@ export default function CreateVideoScreen() {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
-        aspect: [16, 9],
+        aspect: [9, 16], // enforce vertical crop for thumbnails
         quality: 0.8,
       });
 
@@ -249,23 +249,22 @@ export default function CreateVideoScreen() {
             </Text>
             
             <TouchableOpacity 
-              style={styles.uploadZone} 
+              style={[styles.verticalFrame, styles.verticalUploadZone]} 
               onPress={pickVideo}
+              activeOpacity={0.8}
             >
               {video ? (
-                <View style={styles.videoPreviewContainer}>
-                  <Video
-                    source={{ uri: video.uri }}
-                    style={styles.videoPreview}
-                    resizeMode={ResizeMode.COVER}
-                    shouldPlay={false}
-                    isLooping={false}
-                    useNativeControls
-                  />
-                </View>
+                <Video
+                  source={{ uri: video.uri }}
+                  style={styles.verticalMedia}
+                  resizeMode={ResizeMode.COVER}
+                  shouldPlay={false}
+                  isLooping={false}
+                  useNativeControls
+                />
               ) : (
                 <>
-                  <Ionicons name="cloud-upload" size={48} color="#58e2bd" />
+                  <Ionicons name="cloud-upload" size={38} color="#58e2bd" />
                   <Text style={styles.uploadText}>Tap to select a video</Text>
                   <Text style={styles.uploadSubtext}>MP4, MOV, or other video formats</Text>
                 </>
@@ -324,7 +323,7 @@ export default function CreateVideoScreen() {
                 style={[styles.input, styles.textArea]}
                 value={description}
                 onChangeText={setDescription}
-                placeholder="Explain what learners will gain from this video"
+                placeholder="Your description here"
                 placeholderTextColor="#777"
                 multiline
                 numberOfLines={4}
@@ -333,13 +332,14 @@ export default function CreateVideoScreen() {
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Thumbnail (Optional)</Text>
+              <Text style={styles.label}>Thumbnail (9:16)</Text>
               <TouchableOpacity 
-                style={styles.thumbnailUpload} 
+                style={[styles.verticalFrame, styles.verticalUploadZone]} 
                 onPress={pickThumbnail}
+                activeOpacity={0.8}
               >
                 {thumbnail ? (
-                  <Image source={{ uri: thumbnail.uri }} style={styles.thumbnailPreview} />
+                  <Image source={{ uri: thumbnail.uri }} style={styles.verticalMedia} />
                 ) : (
                   <>
                     <Ionicons name="image" size={32} color="#58e2bd" />
@@ -577,7 +577,7 @@ const styles = StyleSheet.create({
   },
   uploadText: {
     color: '#58e2bd',
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '500',
     marginTop: 12,
   },
@@ -593,6 +593,35 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   videoPreview: {
+    width: '100%',
+    height: '100%',
+  },
+  verticalPreviewSection: {
+    marginTop: 16,
+  },
+  verticalPreviewTitle: {
+    color: '#aaa',
+    marginBottom: 8,
+  },
+  verticalFrame: {
+    height: 320,
+    aspectRatio: 9 / 16,
+    borderRadius: 10,
+    overflow: 'hidden',
+    backgroundColor: '#101010',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  verticalUploadZone: {
+    alignSelf: 'center',
+    borderStyle: 'dashed',
+    borderWidth: 2,
+    borderColor: '#333',
+    backgroundColor: 'rgba(0,0,0,0.2)',
+  },
+  verticalMedia: {
     width: '100%',
     height: '100%',
   },

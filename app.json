@@ -4,18 +4,36 @@
     "slug": "Knowble-app",
     "version": "1.0.0",
     "orientation": "portrait",
+    "owner": "aaryannaidu",
     "icon": "./assets/images/icon.png",
     "scheme": "knowbleapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "package": "com.knowble.app.ios",
+      "bundleIdentifier": "com.knowble.app.ios",
+      "supportsTablet": true,
+      "urlSchemes": ["knowbleapp", "com.knowble.app.ios"]
     },
     "android": {
+      "package": "com.knowble.app.android",
+      "bundleIdentifier": "com.knowble.app.android",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "data": [{ "scheme": "knowbleapp" }],
+          "category": ["BROWSABLE", "DEFAULT"]
+        },
+        {
+          "action": "VIEW",
+          "data": [{ "scheme": "https", "host": "auth.expo.io" }],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ],
       "edgeToEdgeEnabled": true
     },
     "web": {
@@ -34,10 +52,18 @@
           "backgroundColor": "#ffffff"
         }
       ],
-      "expo-font"
+      "expo-font",
+      "expo-web-browser",
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "528a24c6-431d-477b-a283-264e9a6c3f98"
+      }
     }
   }
 }

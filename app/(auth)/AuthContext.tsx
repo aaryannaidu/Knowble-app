@@ -20,21 +20,49 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check for existing token on app start
     const checkToken = async () => {
-      const storedToken = await AsyncStorage.getItem('access_token');
-      if (storedToken) {
-        setToken(storedToken);
-        try {
-          // Explicitly pass token to ensure Authorization header
-          const profile = await getUserProfile(storedToken);
-          setUser(profile);
-        } catch (error) {
-          console.error('Token validation failed:', error);
-          await logout();
+      try {
+        const storedToken = await AsyncStorage.getItem('access_token');
+        const storedRefresh = await AsyncStorage.getItem('refresh_token');
+
+        // 1) Try current access token
+        if (storedToken) {
+          try {
+            setToken(storedToken);
+            const profile = await getUserProfile(storedToken);
+            setUser(profile);
+            return; // success
+          } catch (err: any) {
+            // fall through to refresh flow
+            console.log('Access token invalid, attempting refresh...', err);
+          }
         }
+
+        // 2) Try to refresh using refresh token
+        if (storedRefresh) {
+          try {
+            const data = await refreshUserToken(storedRefresh);
+            const newAccess = data?.access;
+            if (newAccess) {
+              await AsyncStorage.setItem('access_token', newAccess);
+              setToken(newAccess);
+              const profile = await getUserProfile(newAccess);
+              setUser(profile);
+              return; // success
+            }
+          } catch (err) {
+            console.error('Refresh token flow failed:', err);
+          }
+        }
+
+        // 3) If all fails, logout
+        await logout();
+      } catch (error) {
+        console.error('Token validation failed unexpectedly:', error);
+        await logout();
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
     checkToken();
   }, []);
