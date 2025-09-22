@@ -10,30 +10,15 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "package": "com.knowble.app.ios",
       "bundleIdentifier": "com.knowble.app.ios",
-      "supportsTablet": true,
-      "urlSchemes": ["knowbleapp", "com.knowble.app.ios"]
+      "supportsTablet": true
     },
     "android": {
       "package": "com.knowble.app.android",
-      "bundleIdentifier": "com.knowble.app.android",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "intentFilters": [
-        {
-          "action": "VIEW",
-          "data": [{ "scheme": "knowbleapp" }],
-          "category": ["BROWSABLE", "DEFAULT"]
-        },
-        {
-          "action": "VIEW",
-          "data": [{ "scheme": "https", "host": "auth.expo.io" }],
-          "category": ["BROWSABLE", "DEFAULT"]
-        }
-      ],
       "edgeToEdgeEnabled": true
     },
     "web": {
@@ -54,7 +39,12 @@
       ],
       "expo-font",
       "expo-web-browser",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "@react-native-google-signin/google-signin",
+        { "iosUrlScheme": "com.googleusercontent.apps.238570610028-amf9iue9t4mqihsbras06r0drdlouqgv" }
+      ]
+
     ],
     "experiments": {
       "typedRoutes": true

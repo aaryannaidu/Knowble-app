@@ -1,15 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  Image, 
-  ScrollView, 
-  TouchableOpacity, 
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Image,
+  ScrollView,
+  TouchableOpacity,
   ActivityIndicator,
-  Alert,
   FlatList,
-  Dimensions,
   RefreshControl,
   StatusBar,
   Platform,
@@ -19,8 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import axios from 'axios';
 import { API_BASE_URL } from '../../(auth)/api';
-
-const { width } = Dimensions.get('window');
+import VideoCard from '../../components/VideoCard';
 
 // Define interfaces for our data types
 interface Video {
@@ -61,48 +58,24 @@ const goToEditProfile = () => {
 
 const ProfileScreen = () => {
   const { user, token } = useAuth();
-  const [isLoading, setIsLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState('videos');
   const [videos, setVideos] = useState<Video[]>([]);
   const [microCourses, setMicroCourses] = useState<MicroCourse[]>([]);
   const [userChannel, setUserChannel] = useState<Channel | null>(null);
   const [isLoadingContent, setIsLoadingContent] = useState(false);
+  const [profileImageLoadError, setProfileImageLoadError] = useState(false);
 
-  useEffect(() => {
-    if (user) {
-      fetchUserChannel();
-    }
-  }, [user]);
-
-  const fetchUserChannel = async () => {
-    if (!user || !token) return;
-    
-    setIsLoadingContent(true);
-    try {
-      const response = await axios.get(`${API_BASE_URL}/users/${user.id}/channel/`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      
-      setUserChannel(response.data);
-      fetchChannelContent(response.data.id);
-    } catch (error) {
-      console.error('Error fetching user channel:', error);
-    } finally {
-      setIsLoadingContent(false);
-    }
-  };
-
-  const fetchChannelContent = async (channelId: number) => {
+  const fetchChannelContent = useCallback(async (channelId: number) => {
     if (!channelId || !token) return;
-    
+
     try {
       // Fetch videos
       const videosResponse = await axios.get(`${API_BASE_URL}/channels/${channelId}/videos/`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setVideos(videosResponse.data);
-      
+
       // Fetch micro courses
       const coursesResponse = await axios.get(`${API_BASE_URL}/channels/${channelId}/micro_courses/`, {
         headers: { Authorization: `Bearer ${token}` }
@@ -111,7 +84,31 @@ const ProfileScreen = () => {
     } catch (error) {
       console.error('Error fetching channel content:', error);
     }
-  };
+  }, [token]);
+
+  const fetchUserChannel = useCallback(async () => {
+    if (!user || !token) return;
+
+    setIsLoadingContent(true);
+    try {
+      const response = await axios.get(`${API_BASE_URL}/users/${user.id}/channel/`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      setUserChannel(response.data);
+      fetchChannelContent(response.data.id);
+    } catch (error) {
+      console.error('Error fetching user channel:', error);
+    } finally {
+      setIsLoadingContent(false);
+    }
+  }, [user, token, fetchChannelContent]);
+
+  useEffect(() => {
+    if (user) {
+      fetchUserChannel();
+    }
+  }, [user, fetchUserChannel]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -120,35 +117,21 @@ const ProfileScreen = () => {
   };
 
   const renderVideoItem = ({ item }: { item: Video }) => {
-    const thumbnailUrl = item.thumbnail_url;
     const handlePress = () => router.push(`/watch/${item.id}`);
+
     return (
-      <TouchableOpacity style={styles.videoCard} onPress={handlePress}>
-        <View style={styles.thumbnailContainer}>
-          {thumbnailUrl ? (
-            <Image 
-              source={{ uri: thumbnailUrl }} 
-              style={styles.thumbnail}
-              resizeMode="cover"
-            />
-          ) : (
-            <View style={styles.thumbnailPlaceholder}>
-              <Ionicons name="play-circle" size={44} color="#58e2bd" />
-            </View>
-          )}
-          <View style={styles.viewsTag}>
-            <Text style={styles.viewsText}>{(item.views || 0)} views</Text>
-          </View>
-          {item.duration ? (
-            <View style={styles.durationTag}>
-              <Text style={styles.durationText}>{formatDuration(item.duration)}</Text>
-            </View>
-          ) : null}
-        </View>
-        <View style={styles.videoInfo}> 
-          <Text style={styles.videoTitle} numberOfLines={2}>{item.title}</Text>
-        </View>
-      </TouchableOpacity>
+      <VideoCard
+        id={item.id}
+        title={item.title}
+        thumbnailUrl={item.thumbnail_url}
+        views={item.views}
+        createdAt={item.created_at}
+        channelName={userChannel?.name || 'My Channel'}
+        creatorUsername={user?.username || 'Unknown'}
+        creatorAvatarUrl={user?.profile_picture_url}
+        onPress={handlePress}
+        style={{ width: '48%' }}
+      />
     );
   };
 
@@ -166,30 +149,6 @@ const ProfileScreen = () => {
     </TouchableOpacity>
   );
 
-  const formatDuration = (durationString: string | undefined): string => {
-    if (!durationString) return '0:00';
-    
-    // Parse the duration string (e.g., "00:03:45" or "PT3M45S")
-    let minutes = 0;
-    let seconds = 0;
-    
-    if (durationString.includes(':')) {
-      const parts = durationString.split(':');
-      if (parts.length >= 2) {
-        minutes = parseInt(parts[parts.length - 2], 10);
-        seconds = parseInt(parts[parts.length - 1], 10);
-      }
-    } else if (durationString.startsWith('PT')) {
-      // ISO 8601 duration format
-      const minutesMatch = durationString.match(/(\d+)M/);
-      const secondsMatch = durationString.match(/(\d+)S/);
-      
-      if (minutesMatch) minutes = parseInt(minutesMatch[1], 10);
-      if (secondsMatch) seconds = parseInt(secondsMatch[1], 10);
-    }
-    
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-  };
 
   const renderEmptyContent = () => (
     <View style={styles.emptyContainer}>
@@ -235,16 +194,15 @@ const ProfileScreen = () => {
           <View style={styles.profileHeaderContent}>
             {/* Profile Image on Left */}
             <View style={styles.profileImageContainer}>
-              {user.profile_picture ? (
+              {user.profile_picture && !profileImageLoadError ? (
                 <Image 
                   source={{ uri: user.profile_picture_url.replace('http://', 'https://') }} 
-                  style={styles.profileImage} 
+                  style={styles.profileImage}
+                  onError={() => setProfileImageLoadError(true)}
                 />
               ) : (
                 <View style={styles.profileImagePlaceholder}>
-                  <Text style={styles.profileImagePlaceholderText}>
-                    {user.username ? user.username.charAt(0).toUpperCase() : 'U'}
-                  </Text>
+                  <Ionicons name="person" size={48} color="#fff" />
                 </View>
               )}
             </View>
@@ -443,84 +401,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     backgroundColor: '#121212',
     minHeight: 280,
-  },
-  videoCard: {
-    backgroundColor: '#202020',
-    borderRadius: 12,
-    overflow: 'hidden',
-    marginBottom: 14,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-    borderWidth: 1,
-    borderColor: '#333',
-    height: 280,
-    width: '48%',
-  },
-  thumbnailContainer: {
-    position: 'relative',
-    backgroundColor: '#101010',
-    height: 200,
-    justifyContent: 'center',
-    alignItems: 'center',
-    overflow: 'hidden',
-  },
-  thumbnail: {
-    width: '100%',
-    height: '100%',
-    borderTopLeftRadius: 12,
-    borderTopRightRadius: 12,
-    backgroundColor: '#101010',
-  },
-  thumbnailPlaceholder: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: '#101010',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  viewsTag: {
-    position: 'absolute',
-    bottom: 8,
-    left: 8,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  viewsText: {
-    color: 'white',
-    fontSize: 12,
-  },
-  durationTag: {
-    position: 'absolute',
-    bottom: 8,
-    right: 8,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  durationText: {
-    color: 'white',
-    fontSize: 12,
-  },
-  videoInfo: {
-    padding: 12,
-    backgroundColor: '#161616',
-    flex: 1,
-  },
-  videoTitle: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '500',
-    marginBottom: 5,
-  },
-  videoStats: {
-    color: '#aaa',
-    fontSize: 12,
   },
   courseCard: {
     backgroundColor: '#1a1a1a',

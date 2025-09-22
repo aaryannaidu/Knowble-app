@@ -14,38 +14,20 @@ interface MicroCourse {
   channel: {
     id: string;
     name: string;
-    avatar: string | null;
     creator: {
-      username: string;
+      profile_picture_url: string | null;
     };
+    username: string;
   };
   videos: any[]; // Array of videos
   created_at: string;
 }
 
-// Helper function to format relative time
-const formatRelativeTime = (dateString: string): string => {
-  const now = new Date();
-  const courseDate = new Date(dateString);
-  const diffInMs = now.getTime() - courseDate.getTime();
-  const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
-  const diffInHours = Math.floor(diffInMs / (1000 * 60 * 60));
-  const diffInMinutes = Math.floor(diffInMs / (1000 * 60));
-
-  if (diffInDays > 0) {
-    return `${diffInDays} day${diffInDays > 1 ? 's' : ''} ago`;
-  } else if (diffInHours > 0) {
-    return `${diffInHours} hour${diffInHours > 1 ? 's' : ''} ago`;
-  } else if (diffInMinutes > 0) {
-    return `${diffInMinutes} minute${diffInMinutes > 1 ? 's' : ''} ago`;
-  } else {
-    return 'Just now';
-  }
-};
 
 export default function MicroCoursesScreen() {
   const [microCourses, setMicroCourses] = useState<MicroCourse[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -66,44 +48,44 @@ export default function MicroCoursesScreen() {
     }
   };
 
+  const handleRefresh = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      const response = await api.get('/micro-courses/');
+      setMicroCourses(response.data);
+      setError(null);
+    } catch (err) {
+      console.error('Error refreshing micro courses:', err);
+      setError('Failed to refresh micro courses. Please try again.');
+      setTimeout(() => setError(null), 3000);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   const renderMicroCourseItem = ({ item }: { item: MicroCourse }) => (
     <Link href={`/microcourses/${item.id}`} asChild>
       <TouchableOpacity style={styles.courseCard}>
-        {/* Course thumbnail - using first video's thumbnail or placeholder */}
-        <View style={styles.thumbnailContainer}>
-          {item.videos.length > 0 && item.videos[0].thumbnail_url ? (
-            <Image 
-              source={{ uri: item.videos[0].thumbnail_url }} 
-              style={styles.courseThumbnail} 
-              resizeMode="cover"
+        <View style={styles.courseContent}>
+          {item.channel.creator.profile_picture_url ? (
+            <Image
+              source={{ uri: item.channel.creator.profile_picture_url }}
+              style={styles.creatorAvatar}
             />
           ) : (
-            <View style={styles.placeholderThumbnail}>
-              <Ionicons name="play-circle-outline" size={40} color="#58e2bd" />
+            <View style={[styles.creatorAvatar, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#e0e0e0' }]}>
+              <Ionicons name="person" size={20} color="white" />
             </View>
           )}
-          <View style={styles.videoCountBadge}>
-            <Text style={styles.videoCountText}>{item.videos.length} videos</Text>
-          </View>
-        </View>
-        
-        {/* Course info */}
-        <View style={styles.courseInfo}>
-          <Text style={styles.courseName} numberOfLines={2}>{item.name}</Text>
-          <Text style={styles.courseDescription} numberOfLines={3}>
-            {item.description || 'Learn with this comprehensive micro course.'}
-          </Text>
-          
-          <View style={styles.creatorInfo}>
-            <Image 
-              source={{ 
-                uri: item.channel.avatar || 'https://via.placeholder.com/30' 
-              }} 
-              style={styles.creatorAvatar} 
-            />
-            <View style={styles.creatorDetails}>
+          <View style={styles.courseDetails}>
+            <Text style={styles.courseName} numberOfLines={2}>{item.name}</Text>
+            <Text style={styles.courseDescription} numberOfLines={2}>
+              {item.description || 'Learn with this comprehensive micro course.'}
+            </Text>
+            <View style={styles.courseMeta}>
               <Text style={styles.creatorName}>{item.channel.name}</Text>
-              <Text style={styles.courseDate}>Created {formatRelativeTime(item.created_at)}</Text>
+              <Text style={styles.videoCountText}>{item.videos.length} videos</Text>
             </View>
           </View>
         </View>
@@ -151,8 +133,8 @@ export default function MicroCoursesScreen() {
           renderItem={renderMicroCourseItem}
           keyExtractor={(item) => item.id.toString()}
           contentContainerStyle={styles.coursesList}
-          refreshing={loading}
-          onRefresh={fetchMicroCourses}
+          refreshing={refreshing}
+          onRefresh={handleRefresh}
           showsVerticalScrollIndicator={false}
         />
       ) : (
@@ -187,84 +169,55 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
   },
   courseCard: {
-    backgroundColor: '#202020',
+    backgroundColor: '#1e1e1e',
     borderRadius: 12,
-    marginBottom: 16,
+    padding: 16,
+    marginBottom: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
-    borderWidth: 1,
-    borderColor: '#333',
-    overflow: 'hidden',
   },
-  thumbnailContainer: {
-    position: 'relative',
-    height: 180,
+  courseContent: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
   },
-  courseThumbnail: {
-    width: '100%',
-    height: '100%',
+  creatorAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginRight: 12,
   },
-  placeholderThumbnail: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: '#1a1a1a',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  videoCountBadge: {
-    position: 'absolute',
-    top: 12,
-    right: 12,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  videoCountText: {
-    color: '#58e2bd',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  courseInfo: {
-    padding: 16,
+  courseDetails: {
+    flex: 1,
   },
   courseName: {
     color: 'white',
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   courseDescription: {
     color: '#ccc',
     fontSize: 14,
-    lineHeight: 20,
-    marginBottom: 12,
+    lineHeight: 18,
+    marginBottom: 8,
   },
-  creatorInfo: {
+  courseMeta: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-  },
-  creatorAvatar: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    marginRight: 10,
-  },
-  creatorDetails: {
-    flex: 1,
   },
   creatorName: {
     color: '#aaa',
     fontSize: 13,
     fontWeight: '500',
   },
-  courseDate: {
-    color: '#666',
+  videoCountText: {
+    color: '#58e2bd',
     fontSize: 12,
-    marginTop: 2,
+    fontWeight: '600',
   },
   loadingContainer: {
     flex: 1,

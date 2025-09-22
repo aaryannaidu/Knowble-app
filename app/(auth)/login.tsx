@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -14,31 +14,20 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from './AuthContext';
-import * as WebBrowser from 'expo-web-browser';
-import * as Google from 'expo-auth-session/providers/google';
-import * as SecureStore from 'expo-secure-store';
-import Constants from 'expo-constants';
+import { googleLogin } from './api';
+import {
+  GoogleSignin,
+  isErrorWithCode,
+  statusCodes,
+} from '@react-native-google-signin/google-signin';
 
-// Required for completing auth session
-WebBrowser.maybeCompleteAuthSession();
-
-// Detect whether we are running inside Expo Go
-const isExpoGo = Constants.appOwnership === 'expo';
-
-// Configure redirect URI based on environment
-const getRedirectUri = () => {
-  if (isExpoGo) {
-    // For Expo Go, use the auth.expo.io proxy
-    return 'https://auth.expo.io/@aaryannaidu/Knowble-app';
-  } else {
-    // For standalone apps, use the custom scheme
-    return 'knowbleapp://';
-  }
-};
-
-const redirectUri = getRedirectUri();
-console.log('Using redirect URI:', redirectUri);
-console.log('Is Expo Go:', isExpoGo);
+// Google OAuth configuration
+GoogleSignin.configure({
+  webClientId: "238570610028-j8ni922nikv62bdlese8jibji02lpla3.apps.googleusercontent.com",
+  scopes: ["email", "profile"],
+  forceCodeForRefreshToken: true,
+  iosClientId: "238570610028-amf9iue9t4mqihsbras06r0drdlouqgv.apps.googleusercontent.com",
+});
 
 const LoginScreen = () => {
   const [email, setEmail] = useState('');
@@ -46,116 +35,94 @@ const LoginScreen = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+
   const router = useRouter();
-  const { login } = useAuth();
+  const { login, loginWithTokens } = useAuth();
 
-  // Google Auth Request using the expo-auth-session/providers/google package
-  // Using the Google provider with correct configuration
-  const webClientId = '238570610028-j8ni922nikv62bdlese8jibji02lpla3.apps.googleusercontent.com';
-  const androidClientId = '238570610028-8qoktie491467kffu97tjug01rtij584.apps.googleusercontent.com';
-  const iosClientId = '238570610028-amf9iue9t4mqihsbras06r0drdlouqgv.apps.googleusercontent.com';
-  
-  // Log the client ID we're using based on platform
-  const activeClientId = isExpoGo ? webClientId : Platform.select({
-    ios: iosClientId,
-    android: androidClientId,
-    default: webClientId
-  });
-  console.log('Using client ID:', activeClientId);
-  
-  const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
-    clientId: activeClientId,
-    redirectUri,
-    scopes: ['profile', 'email', 'openid'],
-    usePKCE: false,
-    responseType: 'id_token',
-    extraParams: {
-      access_type: 'offline',
-    },
-  });
-  
-  console.log('Using Google auth with', isExpoGo ? 'Expo Go (proxy)' : 'standalone app');
+  // Get Google ID token
+  const getGoogleIdToken = async (): Promise<string> => {
+    try {
+      // Check if Google Play Services are available
+      await GoogleSignin.hasPlayServices();
 
-  // We'll handle the OAuth response after defining the exchange function below
+      // Sign in with Google
+      const userInfo = await GoogleSignin.signIn();
+      console.log('Google Sign-In successful:', userInfo);
 
-  // Backend login using JWT endpoint
-  const loginWithBackend = useCallback(async (idToken: string) => {
+      // Get the ID token
+      const tokens = await GoogleSignin.getTokens();
+      const idToken = tokens.idToken;
+
+      if (!idToken) {
+        throw new Error('No ID token received from Google');
+      }
+
+      return idToken;
+    } catch (error: any) {
+      console.error('Google Sign-In error:', error);
+
+      if (isErrorWithCode(error)) {
+        switch (error.code) {
+          case statusCodes.SIGN_IN_CANCELLED:
+            throw new Error('SIGN_IN_CANCELLED');
+          case statusCodes.IN_PROGRESS:
+            throw new Error('SIGN_IN_IN_PROGRESS');
+          case statusCodes.PLAY_SERVICES_NOT_AVAILABLE:
+            throw new Error('PLAY_SERVICES_NOT_AVAILABLE');
+          default:
+            throw new Error('GOOGLE_SIGN_IN_ERROR');
+        }
+      } else {
+        throw error;
+      }
+    }
+  };
+
+  // Send ID token to backend and complete login
+  const authenticateWithBackend = async (idToken: string) => {
     try {
       console.log('Sending ID token to backend...');
-      const res = await fetch('https://knowble.up.railway.app/v1-1509/api/auth/google/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id_token: idToken }), // Changed from access_token to id_token
-      });
-      
-      const responseText = await res.text();
-      console.log('Backend response:', res.status, responseText);
-      
-      try {
-        const data = JSON.parse(responseText);
-        if (res.ok) {
-          // Store JWTs and update auth state
-          await SecureStore.setItemAsync('accessToken', data.access);
-          await SecureStore.setItemAsync('refreshToken', data.refresh);
-          await login(data.user.email, ''); // Pass email to AuthContext (password not needed)
-          router.replace('/(tabs)/home');
-        } else {
-          Alert.alert('Login Error', data.error || 'Failed to authenticate with server');
-        }
-      } catch (parseError) {
-        Alert.alert('Login Error', 'Invalid response from server');
-        console.error('Failed to parse JSON response:', parseError);
-      }
+
+      // Send ID token to backend
+      const data = await googleLogin(idToken);
+
+      // Persist tokens and user data
+      await loginWithTokens(data.access, data.refresh);
+      router.replace('/(tabs)/home');
     } catch (error: any) {
-      Alert.alert('Login Error', error.message || 'Server communication failed');
-      console.error('Network error:', error);
+      console.error('Backend authentication error:', error);
+      const errorMessage = error.response?.data?.error || 'Failed to authenticate with Google';
+      Alert.alert('Login Error', errorMessage);
+      throw error;
+    }
+  };
+
+  // Handle Google Sign-In (combines both functions)
+  const handleGoogleSignIn = async () => {
+    try {
+      setIsGoogleLoading(true);
+
+      // Step 1: Get Google ID token
+      const idToken = await getGoogleIdToken();
+
+      // Step 2: Send to backend and complete authentication
+      await authenticateWithBackend(idToken);
+    } catch (error: any) {
+      // Handle Google-specific errors with user-friendly messages
+      if (error.message === 'SIGN_IN_CANCELLED') {
+        Alert.alert('Sign In Cancelled', 'Google Sign-In was cancelled by the user.');
+      } else if (error.message === 'SIGN_IN_IN_PROGRESS') {
+        Alert.alert('Sign In In Progress', 'Google Sign-In is already in progress.');
+      } else if (error.message === 'PLAY_SERVICES_NOT_AVAILABLE') {
+        Alert.alert('Play Services Not Available', 'Google Play Services are not available on this device.');
+      } else if (error.message === 'GOOGLE_SIGN_IN_ERROR') {
+        Alert.alert('Google Sign-In Error', 'An unexpected error occurred during Google Sign-In.');
+      }
+      // Backend errors are already handled in authenticateWithBackend
     } finally {
       setIsGoogleLoading(false);
     }
-  }, [login, router]);
-
-  const handleGoogleResponse = useCallback(async (response: any) => {
-    try {
-      setIsGoogleLoading(true);
-      console.log('Handling Google response:', JSON.stringify(response, null, 2));
-      
-      if (response.type === 'success' && response.params?.id_token) {
-        console.log('Got ID token from Google');
-        await loginWithBackend(response.params.id_token);
-      } else if (response.type === 'dismiss') {
-        console.log('Google sign-in was dismissed by user');
-        setIsGoogleLoading(false);
-        // Don't show error for user dismissal
-      } else if (response.type === 'cancel') {
-        console.log('Google sign-in was cancelled by user');
-        setIsGoogleLoading(false);
-        // Don't show error for user cancellation
-      } else if (response.type === 'error') {
-        console.error('Google sign-in error:', response.error);
-        Alert.alert('Authentication Error', response.error?.message || 'Google sign-in failed');
-        setIsGoogleLoading(false);
-      } else {
-        console.error('Unexpected response from Google sign-in:', response);
-        Alert.alert('Authentication Error', 'Unexpected response from Google sign-in. Please try again.');
-        setIsGoogleLoading(false);
-      }
-    } catch (error: any) {
-      console.error('Error in handleGoogleResponse:', error);
-      Alert.alert('Google Sign-In Error', error.message || 'Failed to authenticate with Google');
-      setIsGoogleLoading(false);
-    }
-  }, [loginWithBackend]);
-
-  // Handle Google OAuth response
-  useEffect(() => {
-    if (response) {
-      console.log('Google auth response received:', response.type);
-      handleGoogleResponse(response);
-    }
-  }, [response, handleGoogleResponse]);
-
-  
-
+  };
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
       Alert.alert('Error', 'Please enter both email and password');
@@ -247,35 +214,9 @@ const LoginScreen = () => {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.googleButton, !request && styles.disabledButton]}
-            onPress={async () => {
-              if (!request) {
-                Alert.alert('Error', 'Google authentication not ready. Please wait and try again.');
-                return;
-              }
-
-              setIsGoogleLoading(true);
-              console.log('Attempting Google login...');
-              console.log('Environment:', isExpoGo ? 'Expo Go' : 'Standalone');
-              console.log('Using redirect URI:', redirectUri);
-              console.log('Using client ID:', activeClientId);
-              
-              try {
-                const result = await promptAsync();
-                console.log('Prompt async result:', JSON.stringify(result, null, 2));
-                
-                // The response will be handled by the useEffect hook
-                // So we don't need to manually handle it here
-                if (result.type === 'dismiss' || result.type === 'cancel') {
-                  setIsGoogleLoading(false);
-                }
-              } catch (error) {
-                console.error('Google auth error:', error);
-                Alert.alert('Authentication Error', 'Failed to start Google authentication. Please try again.');
-                setIsGoogleLoading(false);
-              }
-            }}
-            disabled={!request || isLoading || isGoogleLoading}
+            style={[styles.googleButton, (isLoading || isGoogleLoading) && styles.disabledButton]}
+            onPress={handleGoogleSignIn}
+            disabled={isLoading || isGoogleLoading}
           >
             {isGoogleLoading ? (
               <ActivityIndicator color="#fff" />

@@ -9,6 +9,7 @@ interface AuthContextType {
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (userData: { username: string; email: string; password: string; bio?: string }) => Promise<void>;
+  loginWithTokens: (access: string, refresh: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -96,6 +97,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const loginWithTokens = async (access: string, refresh: string) => {
+    try {
+      await AsyncStorage.setItem('access_token', access);
+      await AsyncStorage.setItem('refresh_token', refresh);
+      setToken(access);
+      const profile = await getUserProfile(access);
+      setUser(profile);
+    } catch (error) {
+      console.error('Login with tokens error:', error);
+      throw error;
+    }
+  };
+
   const logout = async () => {
     await AsyncStorage.removeItem('access_token');
     await AsyncStorage.removeItem('refresh_token');
@@ -104,7 +118,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, token, loading, login, register, loginWithTokens, logout }}>
       {children}
     </AuthContext.Provider>
   );

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity, ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -50,6 +50,7 @@ const VideoCard: React.FC<VideoCardProps> = ({
   onPress,
   style,
 }) => {
+  const [imageLoadError, setImageLoadError] = useState(false);
   return (
     <TouchableOpacity style={[styles.videoCard, style]} onPress={onPress}>
       <View style={styles.thumbnailContainer}>
@@ -72,11 +73,15 @@ const VideoCard: React.FC<VideoCardProps> = ({
 
       <View style={styles.videoInfo}>
         <View style={styles.channelInfo}>
-          {creatorAvatarUrl ? (
-            <Image source={{ uri: creatorAvatarUrl }} style={styles.channelAvatar} />
+          {creatorAvatarUrl && !imageLoadError ? (
+            <Image 
+              source={{ uri: creatorAvatarUrl }} 
+              style={styles.channelAvatar}
+              onError={() => setImageLoadError(true)}
+            />
           ) : (
             <View style={styles.avatarPlaceholder}>
-              <Text style={styles.avatarInitial}>{(creatorUsername || channelName || 'U').charAt(0).toUpperCase()}</Text>
+              <Ionicons name="person" size={20} color="#fff" />
             </View>
           )}
           <View style={styles.textContainer}>

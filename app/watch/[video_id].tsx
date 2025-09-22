@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity, ActivityIndicator, Dimensions, Alert, Animated, FlatList } from 'react-native';
+import { View, Text, StyleSheet, Image, TouchableOpacity, ActivityIndicator, Dimensions, Alert, Animated, FlatList, ScrollView, Easing } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,6 +9,10 @@ import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
 import { useAuth } from '../(auth)/AuthContext';
 import { API_BASE_URL } from '../(auth)/api';  // Assuming API_BASE_URL is imported from api
 import { useFocusEffect } from '@react-navigation/native';
+
+const ACCENT_COLOR = '#FFFFFF';
+const ACCENT_BG_SUBTLE = 'rgba(255, 255, 255, 0.08)';
+const ACCENT_BORDER_SUBTLE = 'rgba(255, 255, 255, 0.22)';
 
 // Define the video interface
 interface VideoData {
@@ -34,7 +39,7 @@ interface VideoData {
   creator: {
     id: string | number;
     username: string;
-    profile_picture: string | null;
+    profile_picture_url: string | null;
   };
   transcript?: string | null;
 }
@@ -56,7 +61,7 @@ const MOCK_VIDEOS: VideoData[] = [
     comment_count: 50,
     created_at: new Date().toISOString(),
     channel: { id: '101', name: 'React Native Channel', avatar: null },
-    creator: { id: '101', username: 'ReactNative', profile_picture: null },
+    creator: { id: '101', username: 'ReactNative', profile_picture_url: null },
   },
   {
     id: '2',
@@ -73,7 +78,7 @@ const MOCK_VIDEOS: VideoData[] = [
     comment_count: 32,
     created_at: new Date().toISOString(),
     channel: { id: '102', name: 'TypeScript Guru', avatar: null },
-    creator: { id: '102', username: 'TSGuru', profile_picture: null },
+    creator: { id: '102', username: 'TSGuru', profile_picture_url: null },
   },
 ];
 
@@ -185,6 +190,198 @@ const toggleSubscription = async (channelId: string | number, token: string | nu
   }
 };
 
+// Expandable description sheet component (YouTube-like)
+const DescriptionSheet = ({ 
+  visible, 
+  onClose, 
+  video, 
+  screenHeight 
+}: { 
+  visible: boolean; 
+  onClose: () => void; 
+  video: VideoData; 
+  screenHeight: number; 
+}) => {
+  const insets = useSafeAreaInsets();
+  const sheetHeight = Math.floor(screenHeight * 0.75);
+  const translateY = useRef(new Animated.Value(sheetHeight)).current;
+  const dragStartY = useRef(0);
+  const isDragging = useRef(false);
+
+  // Animate sheet in/out
+  useEffect(() => {
+    if (visible) {
+      Animated.spring(translateY, {
+        toValue: 0,
+        useNativeDriver: true,
+        tension: 100,
+        friction: 8,
+      }).start();
+    } else {
+      Animated.timing(translateY, {
+        toValue: sheetHeight,
+        duration: 250,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [visible, sheetHeight, translateY]);
+
+  // Handle touch gestures for drag-to-dismiss
+  const handleTouchStart = (event: any) => {
+    dragStartY.current = event.nativeEvent.pageY;
+    isDragging.current = true;
+  };
+
+  const handleTouchMove = (event: any) => {
+    if (!isDragging.current) return;
+    
+    const currentY = event.nativeEvent.pageY;
+    const deltaY = Math.max(0, currentY - dragStartY.current);
+    translateY.setValue(deltaY);
+  };
+
+  const handleTouchEnd = (event: any) => {
+    if (!isDragging.current) return;
+    
+    const currentY = event.nativeEvent.pageY;
+    const deltaY = Math.max(0, currentY - dragStartY.current);
+    const shouldClose = deltaY > sheetHeight * 0.3;
+    
+    isDragging.current = false;
+    
+    if (shouldClose) {
+      Animated.timing(translateY, {
+        toValue: sheetHeight,
+        duration: 200,
+        useNativeDriver: true,
+      }).start(onClose);
+    } else {
+      Animated.spring(translateY, {
+        toValue: 0,
+        useNativeDriver: true,
+        tension: 100,
+        friction: 8,
+      }).start();
+    }
+  };
+
+  const formatDate = (dateString: string) => {
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'short', 
+        day: 'numeric' 
+      });
+    } catch {
+      return '';
+    }
+  };
+
+  const formatViewCount = (views: number) => {
+    if (views >= 1000000) return `${(views / 1000000).toFixed(1)}M views`;
+    if (views >= 1000) return `${(views / 1000).toFixed(1)}K views`;
+    return `${views} views`;
+  };
+
+  if (!visible) return null;
+
+  return (
+    <>
+      {/* Backdrop */}
+      <TouchableOpacity
+        style={styles.sheetBackdrop}
+        activeOpacity={1}
+        onPress={onClose}
+      />
+
+      {/* Sheet */}
+      <Animated.View
+        style={[
+          styles.descriptionSheet,
+          {
+            height: sheetHeight,
+            transform: [{ translateY }],
+            paddingBottom: Math.max(20, insets.bottom),
+          },
+        ]}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+      >
+        <BlurView intensity={28} tint="dark" style={StyleSheet.absoluteFill} />
+        
+        {/* Drag handle */}
+        <View style={styles.sheetDragHandle} />
+
+        {/* Content */}
+        <ScrollView
+          style={styles.sheetScrollView}
+          contentContainerStyle={styles.sheetContent}
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+        >
+          {/* Close button */}
+          <TouchableOpacity style={styles.sheetCloseButton} onPress={onClose}>
+            <Ionicons name="close" size={24} color="white" style={styles.highContrastIcon} />
+          </TouchableOpacity>
+
+          {/* Video title */}
+          <Text style={[styles.sheetTitle, styles.highContrastText]}>
+            {video.title}
+          </Text>
+
+          {/* Video stats */}
+          <View style={styles.sheetStats}>
+            <Text style={[styles.sheetStatsText, styles.highContrastText]}>
+              {formatViewCount(video.views || 0)}
+            </Text>
+            <Text style={[styles.sheetStatsText, styles.highContrastText]}>
+              {video.created_at ? formatDate(video.created_at) : ''}
+            </Text>
+          </View>
+
+          {/* Channel info */}
+          <TouchableOpacity style={styles.sheetChannelInfo}>
+            {video.creator.profile_picture_url ? (
+              <Image 
+                source={{ uri: video.creator.profile_picture_url }} 
+                style={styles.sheetChannelAvatar} 
+              />
+            ) : (
+              <View style={styles.sheetAvatarPlaceholder}>
+                <Text style={styles.sheetAvatarInitial}>
+                  {video.creator.username ? video.creator.username.charAt(0).toUpperCase() : 'U'}
+                </Text>
+              </View>
+            )}
+            <View style={styles.sheetChannelText}>
+              <Text style={[styles.sheetChannelName, styles.highContrastText]}>
+                {video.channel.name}
+              </Text>
+              <Text style={[styles.sheetChannelSubs, styles.highContrastText]}>
+                {video.channel.subscribers_count 
+                  ? `${video.channel.subscribers_count.toLocaleString()} subscribers`
+                  : 'No subscribers yet'
+                }
+              </Text>
+            </View>
+          </TouchableOpacity>
+
+          {/* Description */}
+          {video.description && (
+            <View style={styles.sheetDescriptionContainer}>
+              <Text style={[styles.sheetDescriptionText, styles.highContrastText]}>
+                {video.description}
+              </Text>
+            </View>
+          )}
+        </ScrollView>
+      </Animated.View>
+    </>
+  );
+};
+
 // Individual video player component
 const VideoPlayer = ({ video, isActive, onUpdateLike, onUpdateSave, onComment, onUpdateViewCount, user, token }: {
   video: VideoData;
@@ -211,8 +408,10 @@ const VideoPlayer = ({ video, isActive, onUpdateLike, onUpdateSave, onComment, o
   const [playbackDuration, setPlaybackDuration] = useState(0);
   const [isScrubbing, setIsScrubbing] = useState(false);
   const [progressWidth, setProgressWidth] = useState(0);
+  const progressAnimated = useRef(new Animated.Value(0)).current; // 0..1
   const [viewCount, setViewCount] = useState(video.views || 0);
   const [hasViewCounted, setHasViewCounted] = useState(false);
+  const [isDescriptionSheetOpen, setIsDescriptionSheetOpen] = useState(false);
   
   // Remember whether the video was playing before the user started scrubbing so we can resume correctly
   const wasPlayingRef = useRef(false);
@@ -308,6 +507,19 @@ const VideoPlayer = ({ video, isActive, onUpdateLike, onUpdateSave, onComment, o
       }
     }
   }, [isActive, showControlsTemporarily]);
+
+  // Smoothly animate progress when playback updates
+  useEffect(() => {
+    if (!isScrubbing && playbackDuration > 0) {
+      const ratio = Math.max(0, Math.min(1, playbackPosition / playbackDuration));
+      Animated.timing(progressAnimated, {
+        toValue: ratio,
+        duration: 120,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: false,
+      }).start();
+    }
+  }, [playbackPosition, playbackDuration, isScrubbing, progressAnimated]);
 
   // Handle view count increment - start timer when video becomes active and is playing
   useEffect(() => {
@@ -575,18 +787,35 @@ const VideoPlayer = ({ video, isActive, onUpdateLike, onUpdateSave, onComment, o
         {/* Top controls */}
         <View style={[styles.topControls, { marginTop: (insets.top || 0) }]}>
           <TouchableOpacity onPress={() => { showControlsTemporarily(); router.back(); }} style={styles.iconButton}>
-            <Ionicons name="arrow-back" size={28} color="white" />
+            <Ionicons name="arrow-back" size={28} color="white" style={styles.highContrastIcon} />
           </TouchableOpacity>
           <View style={styles.spacer} />
-          <TouchableOpacity onPress={() => { setIsMuted(prev => !prev); showControlsTemporarily(); }} style={styles.iconButton}>
-            <Ionicons name={isMuted ? 'volume-mute' : 'volume-high'} size={28} color="white" />
+          <TouchableOpacity 
+            onPress={() => { 
+              const newMutedState = !isMuted;
+              setIsMuted(newMutedState);
+              videoRef.current?.setStatusAsync({ isMuted: newMutedState }).catch(console.error);
+              showControlsTemporarily(); 
+            }} 
+            style={styles.iconButton}
+          >
+            <Ionicons name={isMuted ? 'volume-mute' : 'volume-high'} size={28} color="white" style={styles.highContrastIcon} />
           </TouchableOpacity>
         </View>
 
         {/* Center play/pause button */}
         <View style={styles.centerControls}>
           <TouchableOpacity
-            onPress={() => { setIsPlaying(prev => !prev); showControlsTemporarily(); }}
+            onPress={() => {
+              const newPlayingState = !isPlaying;
+              setIsPlaying(newPlayingState);
+              if (newPlayingState) {
+                videoRef.current?.playAsync().catch(console.error);
+              } else {
+                videoRef.current?.pauseAsync().catch(console.error);
+              }
+              showControlsTemporarily();
+            }}
             style={styles.playPauseButton}
           >
             <Ionicons name={isPlaying ? 'pause' : 'play'} size={28} color="#121212" />
@@ -594,7 +823,7 @@ const VideoPlayer = ({ video, isActive, onUpdateLike, onUpdateSave, onComment, o
         </View>
 
         {/* Bottom content overlay */}
-        <View style={[styles.bottomOverlay, { paddingBottom: (insets.bottom || 0) - 12}]}>
+        <BlurView intensity={22} tint="dark" style={[styles.bottomOverlay, { paddingBottom: (insets.bottom || 0) + 10 }]}>
           {/* Seekable progress bar (Twitter-like) */}
           <View
             style={styles.progressContainer}
@@ -614,6 +843,7 @@ const VideoPlayer = ({ video, isActive, onUpdateLike, onUpdateSave, onComment, o
               if (progressWidth > 0 && playbackDuration > 0) {
                 const ratio = Math.max(0, Math.min(1, x / progressWidth));
                 const newPos = ratio * playbackDuration;
+                progressAnimated.setValue(ratio);
                 setPlaybackPosition(newPos);
               }
             }}
@@ -622,6 +852,7 @@ const VideoPlayer = ({ video, isActive, onUpdateLike, onUpdateSave, onComment, o
               if (progressWidth === 0 || playbackDuration === 0) return;
               const ratio = Math.max(0, Math.min(1, x / progressWidth));
               const newPos = ratio * playbackDuration;
+              progressAnimated.setValue(ratio);
               setPlaybackPosition(newPos);
             }}
             onResponderRelease={(e) => {
@@ -647,12 +878,26 @@ const VideoPlayer = ({ video, isActive, onUpdateLike, onUpdateSave, onComment, o
             }}
           >
             <View style={styles.progressTrack}>
-              <View style={[styles.progressFill, { width: playbackDuration > 0 ? `${(playbackPosition / playbackDuration) * 100}%` : '0%' }]} />
+              <Animated.View
+                style={[
+                  styles.progressFill,
+                  {
+                    width: progressWidth > 0
+                      ? progressAnimated.interpolate({ inputRange: [0, 1], outputRange: [0, progressWidth] })
+                      : 0,
+                  },
+                ]}
+              />
             </View>
-            <View
+            <Animated.View
               style={[
                 styles.progressHandle,
-                { left: playbackDuration > 0 ? Math.max(0, Math.min(progressWidth - 8, (playbackPosition / playbackDuration) * progressWidth - 8)) : -8 },
+                {
+                  left:
+                    progressWidth > 0
+                      ? progressAnimated.interpolate({ inputRange: [0, 1], outputRange: [-8, Math.max(0, progressWidth - 8)] })
+                      : -8,
+                },
               ]}
             />
           </View>
@@ -662,9 +907,9 @@ const VideoPlayer = ({ video, isActive, onUpdateLike, onUpdateSave, onComment, o
             onPress={handleOpenChannel}
             activeOpacity={0.7}
           >
-            {video.creator.profile_picture ? (
+            {video.creator.profile_picture_url ? (
               <Image 
-                source={{ uri: video.creator.profile_picture }} 
+                source={{ uri: video.creator.profile_picture_url }} 
                 style={styles.channelAvatar} 
               />
             ) : (
@@ -675,8 +920,8 @@ const VideoPlayer = ({ video, isActive, onUpdateLike, onUpdateSave, onComment, o
               </View>
             )}
             <View style={styles.channelTextContainer}>
-              <Text style={styles.channelName}>{video.channel.name}</Text>
-              <Text style={styles.viewCount}>
+              <Text style={[styles.channelName, styles.highContrastText]}>{video.channel.name}</Text>
+              <Text style={[styles.viewCount, styles.highContrastText]}>
                 {formatViewCount(viewCount)} • {formatSubscriberCount(subscribersCount)} subscribers
               </Text>
             </View>
@@ -686,7 +931,7 @@ const VideoPlayer = ({ video, isActive, onUpdateLike, onUpdateSave, onComment, o
               disabled={isSubscribing}
             >
               {isSubscribing ? (
-                <ActivityIndicator size="small" color={isSubscribed ? '#58e2bd' : '#000'} />
+              <ActivityIndicator size="small" color={isSubscribed ? ACCENT_COLOR : '#000'} />
               ) : (
                 <Text style={[styles.subscribeText, isSubscribed && styles.unsubscribeText]}>
                   {isSubscribed ? 'Unsubscribe' : 'Subscribe'}
@@ -695,55 +940,67 @@ const VideoPlayer = ({ video, isActive, onUpdateLike, onUpdateSave, onComment, o
             </TouchableOpacity>
           </TouchableOpacity>
 
-          {/* Video title and description */}
-          <Text style={styles.videoTitle}>{video.title}</Text>
-          {video.description && (
-            <Text style={styles.videoDescription} numberOfLines={2}>
-              {video.description}
+          {/* Video title (tap to open details) */}
+          <TouchableOpacity 
+            activeOpacity={0.8} 
+            onPress={() => setIsDescriptionSheetOpen(true)}
+          >
+            <Text style={[styles.videoTitle, styles.highContrastText]} numberOfLines={2}>
+              {video.title}
             </Text>
-          )}
+          </TouchableOpacity>
 
-          {/* Action buttons pinned to bottom edge */}
-          <View style={styles.actionButtonsRow}>
-            <TouchableOpacity style={styles.actionButton} onPress={handleLike} disabled={isLiking}>
+          {/* Action bar pinned to bottom edge */}
+          <View style={styles.actionBar}>
+            <View style={styles.actionsLeft}>
+              <TouchableOpacity style={styles.actionButton} onPress={handleLike} disabled={isLiking}>
               {isLiking ? (
-                <ActivityIndicator size="small" color="#58e2bd" />
+                <ActivityIndicator size="small" color={ACCENT_COLOR} />
               ) : (
                 <Animated.View style={{ transform: [{ scale: likeAnimation }] }}>
-                  <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={24} color={isLiked ? '#58e2bd' : 'white'} />
+                  <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={24} color={isLiked ? ACCENT_COLOR : 'white'} style={styles.highContrastIcon} />
                 </Animated.View>
               )}
-              <Text style={[styles.actionText, isLiked && styles.likedText]}>
+              <Text style={[styles.actionText, styles.highContrastText, isLiked && styles.likedText]}>
                 {formatLikeCount(likeCount)}
               </Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity style={styles.actionButton} onPress={handleSave} disabled={isSaving}>
+              </TouchableOpacity>
+              
+              <TouchableOpacity style={styles.actionButton} onPress={handleSave} disabled={isSaving}>
               {isSaving ? (
-                <ActivityIndicator size="small" color="#58e2bd" />
+              <ActivityIndicator size="small" color={ACCENT_COLOR} />
               ) : (
-                <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={22} color={isSaved ? '#58e2bd' : 'white'} />
+                <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={22} color={isSaved ? ACCENT_COLOR : 'white'} style={styles.highContrastIcon} />
               )}
-              <Text style={[styles.actionText, isSaved && styles.savedText]}>Save</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity style={styles.actionButton} onPress={() => onComment(video.id)}>
-              <Ionicons name="chatbubble-outline" size={22} color="white" />
-              <Text style={styles.actionText}>{video.comment_count || 0}</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity style={styles.actionButton}>
-                <Ionicons name="share-social-outline" size={22} color="white" />
-              <Text style={styles.actionText}>Share</Text>
-            </TouchableOpacity>
-            
+              <Text style={[styles.actionText, styles.highContrastText, isSaved && styles.savedText]}>Save</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity style={styles.actionButton} onPress={() => onComment(video.id)}>
+              <Ionicons name="chatbubble-outline" size={22} color="white" style={styles.highContrastIcon} />
+              <Text style={[styles.actionText, styles.highContrastText]}>{video.comment_count || 0}</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity style={styles.actionButton}>
+                <Ionicons name="share-social-outline" size={22} color="white" style={styles.highContrastIcon} />
+              <Text style={[styles.actionText, styles.highContrastText]}>Share</Text>
+              </TouchableOpacity>
+            </View>
+
             <TouchableOpacity style={styles.naiduButton} onPress={handleChatWithNaidu}>
-              <Ionicons name="hardware-chip" size={22} color="#58e2bd" />
-              <Text style={styles.naiduText}>NAIDU</Text>
+              <Ionicons name="hardware-chip" size={22} color={ACCENT_COLOR} style={styles.highContrastIcon} />
+              <Text style={[styles.naiduText, styles.highContrastText]}>NAIDU</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </BlurView>
       </Animated.View>
+
+      {/* Description Sheet */}
+      <DescriptionSheet
+        visible={isDescriptionSheetOpen}
+        onClose={() => setIsDescriptionSheetOpen(false)}
+        video={video}
+        screenHeight={screenHeight}
+      />
     </View>
   );
 };
@@ -921,7 +1178,7 @@ export default function WatchScreen() {
     return (
       <View style={[styles.container, styles.centered]}>
         <StatusBar style="light" />
-        <ActivityIndicator size="large" color="#58e2bd" />
+        <ActivityIndicator size="large" color={ACCENT_COLOR} />
       </View>
     );
   }
@@ -987,13 +1244,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   backButton: {
-    backgroundColor: '#58e2bd',
+    backgroundColor: '#FFFFFF',
     paddingVertical: 10,
     paddingHorizontal: 20,
     borderRadius: 20,
   },
   backButtonText: {
-    color: '#000',
+    color: '#000000',
     fontWeight: '600',
   },
   videoContainer: {
@@ -1007,26 +1264,30 @@ const styles = StyleSheet.create({
   },
   progressContainer: {
     paddingHorizontal: 2,
-    paddingBottom: 8,
+    paddingBottom: 10,
   },
   progressTrack: {
     width: '100%',
-    height: 3,
-    backgroundColor: 'rgba(255, 255, 255, 0.35)',
-    borderRadius: 2,
+    height: 2,
+    backgroundColor: 'rgba(255, 255, 255, 0.22)',
+    borderRadius: 999,
     overflow: 'hidden',
   },
   progressFill: {
-    height: 3,
-    backgroundColor: '#58e2bd',
+    height: 2,
+    backgroundColor: ACCENT_COLOR,
   },
   progressHandle: {
     position: 'absolute',
-    bottom: 2,
+    bottom: -4,
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: '#58e2bd',
+    backgroundColor: ACCENT_COLOR,
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 1 },
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
@@ -1114,23 +1375,23 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   subscribeButton: {
-    backgroundColor: '#58e2bd',
+    backgroundColor: '#FFFFFF',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
   },
   subscribeText: {
-    color: '#000',
+    color: '#000000',
     fontSize: 14,
     fontWeight: '600',
   },
   unsubscribeButton: {
     backgroundColor: '#333',
     borderWidth: 1,
-    borderColor: '#58e2bd',
+    borderColor: '#FFFFFF',
   },
   unsubscribeText: {
-    color: '#58e2bd',
+    color: '#FFFFFF',
   },
   videoTitle: {
     color: 'white',
@@ -1156,38 +1417,168 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     minWidth: 56,
   },
+  actionBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 8,
+  },
+  actionsLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   actionText: {
     color: 'white',
     fontSize: 13,
     marginTop: 4,
     textAlign: 'center',
   },
+  // High-contrast styling to keep white readable over bright footage
+  highContrastText: {
+    textShadowColor: 'rgba(0,0,0,0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  highContrastIcon: {
+    textShadowColor: 'rgba(0,0,0,0.85)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
   naiduButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(88, 226, 189, 0.1)',
+    backgroundColor: ACCENT_BG_SUBTLE,
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(88, 226, 189, 0.3)',
+    borderColor: ACCENT_BORDER_SUBTLE,
   },
   naiduText: {
-    color: '#58e2bd',
+    color: '#FFFFFF',
     fontSize: 13,
     marginLeft: 4,
     fontWeight: '500',
   },
   likedText: {
-    color: '#58e2bd',
+    color: '#FFFFFF',
   },
   savedText: {
-    color: '#58e2bd',
+    color: '#FFFFFF',
   },
   tapArea: {
     ...StyleSheet.absoluteFillObject,
   },
   flatListContent: {
     flexGrow: 1,
+  },
+  // Description Sheet Styles
+  sheetBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    zIndex: 100,
+  },
+  descriptionSheet: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    overflow: 'hidden',
+    zIndex: 101,
+  },
+  sheetDragHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.4)',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  sheetScrollView: {
+    flex: 1,
+  },
+  sheetContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 24,
+  },
+  sheetCloseButton: {
+    position: 'absolute',
+    top: 12,
+    right: 16,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1,
+  },
+  sheetTitle: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: '700',
+    lineHeight: 24,
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  sheetStats: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  sheetStatsText: {
+    color: '#ccc',
+    fontSize: 14,
+    marginRight: 12,
+  },
+  sheetChannelInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    marginBottom: 16,
+  },
+  sheetChannelAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+  },
+  sheetAvatarPlaceholder: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#444',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sheetAvatarInitial: {
+    color: 'white',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  sheetChannelText: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  sheetChannelName: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  sheetChannelSubs: {
+    color: '#aaa',
+    fontSize: 14,
+  },
+  sheetDescriptionContainer: {
+    marginBottom: 20,
+  },
+  sheetDescriptionText: {
+    color: '#eee',
+    fontSize: 15,
+    lineHeight: 22,
   },
 });

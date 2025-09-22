@@ -2,11 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, FlatList, StyleSheet, Image, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { Ionicons } from '@expo/vector-icons';
 import { Link, router } from 'expo-router';
 import api from '../../(auth)/api';
 import { useAuth } from '../../(auth)/AuthContext';
-
+import { Ionicons } from '@expo/vector-icons';
 // Define subscription types
 interface Subscription {
   id: string;
@@ -37,30 +36,12 @@ const formatSubscriberCount = (count: number): string => {
   }
 };
 
-// Helper function to format relative time
-const formatRelativeTime = (dateString: string): string => {
-  const now = new Date();
-  const subDate = new Date(dateString);
-  const diffInMs = now.getTime() - subDate.getTime();
-  const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
-  const diffInHours = Math.floor(diffInMs / (1000 * 60 * 60));
-  const diffInMinutes = Math.floor(diffInMs / (1000 * 60));
-
-  if (diffInDays > 0) {
-    return `Subscribed ${diffInDays} day${diffInDays > 1 ? 's' : ''} ago`;
-  } else if (diffInHours > 0) {
-    return `Subscribed ${diffInHours} hour${diffInHours > 1 ? 's' : ''} ago`;
-  } else if (diffInMinutes > 0) {
-    return `Subscribed ${diffInMinutes} minute${diffInMinutes > 1 ? 's' : ''} ago`;
-  } else {
-    return 'Just subscribed';
-  }
-};
 
 export default function SubscriptionsScreen() {
   const { user } = useAuth();
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -93,6 +74,31 @@ export default function SubscriptionsScreen() {
     }
   };
 
+  const handleRefresh = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      const response = await api.get('/users/subscriptions/');
+
+      // Remove any potential duplicates based on channel ID
+      const uniqueSubscriptions = response.data.filter(
+        (sub: Subscription, index: number, self: Subscription[]) => {
+          return sub.channel && sub.channel.id &&
+                 self.findIndex(s => s.channel?.id === sub.channel?.id) === index;
+        }
+      );
+
+      setSubscriptions(uniqueSubscriptions);
+      setError(null);
+    } catch (err) {
+      console.error('Error refreshing subscriptions:', err);
+      setError('Failed to refresh subscriptions. Please try again.');
+      setTimeout(() => setError(null), 3000);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   const handleUnsubscribe = async (channelId: string) => {
     try {
       await api.post('/subscriptions/toggle/', { channel_id: channelId });
@@ -107,66 +113,37 @@ export default function SubscriptionsScreen() {
   };
 
   const renderSubscriptionItem = ({ item }: { item: Subscription }) => (
-    <View style={styles.subscriptionCard}>
-      <View style={styles.channelHeader}>
-        <TouchableOpacity 
-          style={styles.channelInfo}
-          onPress={() => {
-            router.push(`/channels/${item.channel.id}`);
-          }}
-        >
-          <View style={styles.avatarContainer}>
-            <Image
-              source={
-                { uri: item.channel.creator.profile_picture_url || 'https://via.placeholder.com/60/58e2bd/000000?text=' + encodeURIComponent(item.channel.name.charAt(0).toUpperCase()) }
-              }
-              style={styles.channelAvatar}
-            />
-            {item.channel.is_verified && (
-              <View style={styles.verifiedBadge}>
-                <Ionicons name="checkmark" size={12} color="#000" />
-              </View>
-            )}
+    <TouchableOpacity
+      style={styles.subscriptionCard}
+      onPress={() => {
+        router.push(`/channels/${item.channel.id}`);
+      }}
+    >
+      <View style={styles.channelContent}>
+        {item.channel.creator.profile_picture_url ? (
+          <Image
+            source={{ uri: item.channel.creator.profile_picture_url }}
+            style={styles.channelAvatar}
+          />
+        ) : (
+          <View style={[styles.channelAvatar, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#e0e0e0' }]}>
+            <Ionicons name="person" size={32} color="white" />
           </View>
-          <View style={styles.channelDetails}>
-            <Text style={styles.channelName}>{item.channel.name}</Text>
-            <Text style={styles.channelCreator}>@{item.channel.creator.username}</Text>
-            <Text style={styles.subscriberCount}>
-              {formatSubscriberCount(item.channel.subscribers_count)} subscribers
-            </Text>
-            <Text style={styles.subscriptionDate}>
-              {formatRelativeTime(item.created_at)}
-            </Text>
-          </View>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.subscribeButton}
+        )}
+        <View style={styles.channelDetails}>
+          <Text style={styles.channelName}>{item.channel.name}</Text>
+          <Text style={styles.subscriberCount}>
+            {formatSubscriberCount(item.channel.subscribers_count)} subscribers
+          </Text>
+        </View>
+        <TouchableOpacity
+          style={styles.unsubscribeButton}
           onPress={() => handleUnsubscribe(item.channel.id)}
         >
-          <Ionicons name="notifications" size={16} color="#58e2bd" />
-          <Text style={styles.subscribedText}>Subscribed</Text>
+          <Text style={styles.unsubscribeButtonText}>Unsubscribe</Text>
         </TouchableOpacity>
       </View>
-      
-      {item.channel.description && (
-        <Text style={styles.channelDescription} numberOfLines={2}>
-          {item.channel.description}
-        </Text>
-      )}
-      
-      <View style={styles.channelActions}>
-        <TouchableOpacity 
-          style={styles.viewChannelButton}
-          onPress={() => {
-            router.push(`/channels/${item.channel.id}`);
-          }}
-        >
-          <Text style={styles.viewChannelText}>View Channel</Text>
-          <Ionicons name="arrow-forward" size={16} color="#58e2bd" />
-        </TouchableOpacity>
-      </View>
-    </View>
+    </TouchableOpacity>
   );
 
   if (!user) {
@@ -221,8 +198,8 @@ export default function SubscriptionsScreen() {
           renderItem={renderSubscriptionItem}
           keyExtractor={(item) => item.id.toString()}
           contentContainerStyle={styles.subscriptionsList}
-          refreshing={loading}
-          onRefresh={fetchSubscriptions}
+          refreshing={refreshing}
+          onRefresh={handleRefresh}
           showsVerticalScrollIndicator={false}
         />
       ) : (
@@ -265,51 +242,26 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
   },
   subscriptionCard: {
-    backgroundColor: '#202020',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(88, 226, 189, 0.1)',
-  },
-  channelHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    backgroundColor: '#1e1e1e',
+    borderRadius: 12,
+    padding: 16,
     marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  channelInfo: {
+  channelContent: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    flex: 1,
-    marginRight: 12,
-  },
-  avatarContainer: {
-    position: 'relative',
-    marginRight: 12,
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   channelAvatar: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    borderWidth: 2,
-    borderColor: '#58e2bd',
-  },
-  verifiedBadge: {
-    position: 'absolute',
-    bottom: -2,
-    right: -2,
-    backgroundColor: '#58e2bd',
-    borderRadius: 10,
-    width: 20,
-    height: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    marginRight: 16,
   },
   channelDetails: {
     flex: 1,
@@ -318,62 +270,24 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontWeight: '600',
-    marginBottom: 2,
-  },
-  channelCreator: {
-    color: '#aaa',
-    fontSize: 14,
     marginBottom: 4,
   },
   subscriberCount: {
     color: '#888',
     fontSize: 13,
-    marginBottom: 4,
   },
-  subscriptionDate: {
-    color: '#666',
-    fontSize: 12,
-  },
-  subscribeButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(88, 226, 189, 0.15)',
-    paddingVertical: 8,
+  unsubscribeButton: {
     paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 20,
+    backgroundColor: 'rgba(255, 107, 107, 0.1)',
     borderWidth: 1,
-    borderColor: '#58e2bd',
+    borderColor: '#ff6b6b',
   },
-  subscribedText: {
-    color: '#58e2bd',
-    fontSize: 14,
-    fontWeight: '500',
-    marginLeft: 4,
-  },
-  channelDescription: {
-    color: '#ddd',
-    fontSize: 14,
-    lineHeight: 20,
-    marginBottom: 12,
-  },
-  channelActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    borderTopWidth: 1,
-    borderTopColor: '#333',
-    paddingTop: 12,
-  },
-  viewChannelButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-  },
-  viewChannelText: {
-    color: '#58e2bd',
-    fontSize: 14,
-    fontWeight: '500',
-    marginRight: 4,
+  unsubscribeButtonText: {
+    color: '#ff6b6b',
+    fontSize: 11,
+    fontWeight: '800',
   },
   loadingContainer: {
     flex: 1,

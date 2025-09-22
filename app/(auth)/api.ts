@@ -50,6 +50,18 @@ export const loginUser = async (credentials: { email: string; password: string }
   }
 };
 
+// Google login function
+export const googleLogin = async (idToken: string) => {
+  try {
+    console.log('Attempting Google login with ID token');
+    const response = await api.post('/auth/google/', { id_token: idToken });
+    return response.data;
+  } catch (error) {
+    console.error('Google login error:', error);
+    throw error;
+  }
+};
+
 // Register function
 export const registerUser = async (userData: { 
   username: string; 

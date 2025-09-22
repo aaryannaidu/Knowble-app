@@ -1,41 +1,99 @@
 import { Tabs } from 'expo-router/tabs';
 import { Ionicons } from '@expo/vector-icons';
-import { TouchableOpacity, View, Text, Image, Modal, StyleSheet, Animated } from 'react-native';
+import { TouchableOpacity, View, Text, Image, Modal, StyleSheet, Animated, Alert, Easing } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { useAuth } from '../(auth)/AuthContext';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 
 // Custom Drawer Component
 function CustomDrawer({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const { user, logout } = useAuth();
-  const slideAnim = useRef(new Animated.Value(-280)).current; // Start off-screen to the left
+
+  // Animation values
+  const slideAnim = useRef(new Animated.Value(-320)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const menuItemAnim1 = useRef(new Animated.Value(0)).current;
+  const menuItemAnim2 = useRef(new Animated.Value(0)).current;
+  const menuItemAnim3 = useRef(new Animated.Value(0)).current;
+  const menuItemAnims = useMemo(() => [
+    menuItemAnim1,
+    menuItemAnim2,
+    menuItemAnim3,
+  ], [menuItemAnim1, menuItemAnim2, menuItemAnim3]);
 
   useEffect(() => {
     if (visible) {
-      // Slide in from left
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
+      // Slide in and fade in drawer
+      Animated.parallel([
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 400,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 400,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        // Stagger menu item animations
+        menuItemAnims.forEach((anim, index) => {
+          Animated.timing(anim, {
+            toValue: 1,
+            duration: 400,
+            delay: index * 60,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }).start();
+        });
+      });
     } else {
-      // Slide out to left
-      Animated.timing(slideAnim, {
-        toValue: -280,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
+      // Fade out and slide out
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 0,
+          duration: 400,
+          easing: Easing.in(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: -320,
+          duration: 400,
+          easing: Easing.in(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]).start();
     }
-  }, [visible, slideAnim]);
+  }, [visible, slideAnim, fadeAnim, menuItemAnims]);
 
   const handleLogout = async () => {
-    try {
-      await logout();
-      onClose();
-      router.replace('/(auth)/login');
-    } catch (error) {
-      console.error('Logout error:', error);
-    }
+    Alert.alert(
+      'Confirm Logout',
+      'Are you sure you want to logout?',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Logout',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await logout();
+              onClose();
+              router.replace('/(auth)/login');
+            } catch (error) {
+              console.error('Logout error:', error);
+            }
+          },
+        },
+      ],
+      { cancelable: true }
+    );
   };
 
   const navigateToProfile = () => {
@@ -53,73 +111,146 @@ function CustomDrawer({ visible, onClose }: { visible: boolean; onClose: () => v
     router.push('/(drawer)/saved');
   };
 
+  const MenuItem = ({
+    icon,
+    label,
+    onPress,
+    animValue
+  }: {
+    icon: string;
+    label: string;
+    onPress: () => void;
+    animValue: Animated.Value;
+  }) => (
+    <Animated.View
+      style={{
+        transform: [{
+          translateY: animValue.interpolate({
+            inputRange: [0, 1],
+            outputRange: [30, 0],
+          }),
+        }],
+        opacity: animValue,
+      }}
+    >
+      <TouchableOpacity
+        style={styles.menuItem}
+        onPress={onPress}
+        activeOpacity={0.7}
+      >
+        <Ionicons name={icon as any} size={24} color="#fff" />
+        <Text style={styles.menuItemText}>{label}</Text>
+        <Ionicons
+          name="chevron-forward"
+          size={20}
+          color="rgba(255, 255, 255, 0.4)"
+          style={{ marginLeft: 'auto' }}
+        />
+      </TouchableOpacity>
+    </Animated.View>
+  );
+
   return (
     <Modal
       visible={visible}
-      animationType="none" // We'll handle animation manually
+      animationType="none"
       transparent={true}
+      statusBarTranslucent={true}
+      presentationStyle="overFullScreen"
       onRequestClose={onClose}
     >
       <View style={styles.modalOverlay}>
-        <Animated.View 
+        <Animated.View
           style={[
             styles.drawerContent,
             {
-              transform: [{ translateX: slideAnim }]
+              transform: [{ translateX: slideAnim }],
+              opacity: fadeAnim,
             }
           ]}
         >
-          {/* Profile Header */}
-          <View style={styles.profileHeader}>
-            {user?.profile_picture_url || user?.profile_picture ? (
-              <Image 
-                source={{ uri: (user.profile_picture_url || user.profile_picture || '').replace('http:', 'https:') }} 
-                style={styles.profileImage}
-              />
-            ) : (
-              <View style={styles.profileImagePlaceholder}>
-                <Text style={styles.profileImageText}>
-                  {user?.username ? user.username.charAt(0).toUpperCase() : 'U'}
-                </Text>
+          <LinearGradient
+            colors={['#0d0d0d', '#1a1a1a', '#0f0f0f']}
+            style={styles.gradientBackground}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          >
+            {/* Profile Header */}
+            <View style={styles.profileHeader}>
+              <View style={styles.profileImageContainer}>
+                {user?.profile_picture_url || user?.profile_picture ? (
+                  <Image
+                    source={{ uri: (user.profile_picture_url || user.profile_picture || '').replace('http:', 'https:') }}
+                    style={styles.profileImage}
+                  />
+                ) : (
+                  <View style={styles.profileImagePlaceholder}>
+                    <Text style={styles.profileImageText}>
+                      {user?.username ? user.username.charAt(0).toUpperCase() : 'U'}
+                    </Text>
+                  </View>
+                )}
               </View>
-            )}
-            <Text style={styles.username}>{user?.username || 'User'}</Text>
-            {user?.bio && <Text style={styles.bio}>{user.bio}</Text>}
-          </View>
+              <Text style={styles.username}>{user?.username || 'User'}</Text>
+              {user?.bio && <Text style={styles.bio}>{user.bio}</Text>}
+            </View>
 
-          {/* Menu Items */}
-          <View style={styles.menuItems}>
-            <TouchableOpacity style={styles.menuItem} onPress={navigateToProfile}>
-              <Ionicons name="person-outline" size={24} color="#fff" />
-              <Text style={styles.menuItemText}>Profile</Text>
-            </TouchableOpacity>
+            {/* Menu Items */}
+            <View style={styles.menuItems}>
+              <MenuItem
+                icon="person-outline"
+                label="Profile"
+                onPress={navigateToProfile}
+                animValue={menuItemAnims[0]}
+              />
 
-            <TouchableOpacity style={styles.menuItem} onPress={navigateToSettings}>
-              <Ionicons name="settings-outline" size={24} color="#fff" />
-              <Text style={styles.menuItemText}>Settings</Text>
-            </TouchableOpacity>
+              <MenuItem
+                icon="settings-outline"
+                label="Settings"
+                onPress={navigateToSettings}
+                animValue={menuItemAnims[1]}
+              />
 
-            <TouchableOpacity style={styles.menuItem} onPress={navigateToSaved}>
-              <Ionicons name="bookmark-outline" size={24} color="#fff" />
-              <Text style={styles.menuItemText}>Saved</Text>
-            </TouchableOpacity>
-          </View>
+              <MenuItem
+                icon="bookmark-outline"
+                label="Saved"
+                onPress={navigateToSaved}
+                animValue={menuItemAnims[2]}
+              />
+            </View>
 
-          {/* Logout Button */}
-          <View style={styles.logoutContainer}>
-            <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-              <Ionicons name="log-out-outline" size={20} color="#ff4757" />
-              <Text style={styles.logoutText}>Logout</Text>
-            </TouchableOpacity>
-          </View>
+            {/* Logout Button */}
+            <View style={styles.logoutContainer}>
+              <TouchableOpacity
+                style={styles.logoutButton}
+                onPress={handleLogout}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="log-out-outline" size={20} color="#ff4757" />
+                <Text style={styles.logoutText}>Logout</Text>
+              </TouchableOpacity>
+            </View>
+          </LinearGradient>
         </Animated.View>
-        
+
         {/* Background overlay - tap to close */}
-        <TouchableOpacity 
-          style={styles.modalBackground} 
-          onPress={onClose}
-          activeOpacity={1}
-        />
+        <Animated.View
+          style={[
+            styles.modalBackground,
+            {
+              opacity: fadeAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, 0.5],
+              }),
+            }
+          ]}
+        >
+          <TouchableOpacity
+            style={{ flex: 1 }}
+            onPress={onClose}
+            activeOpacity={1}
+          />
+        </Animated.View>
       </View>
     </Modal>
   );
@@ -152,6 +283,7 @@ export default function TabsLayout() {
           tabBarStyle: {
             backgroundColor: '#202020',
             borderTopColor: '#333',
+            ...(drawerVisible ? { display: 'none' } : {} as any),
           },
           headerStyle: {
             backgroundColor: '#202020',
@@ -285,107 +417,141 @@ const styles = StyleSheet.create({
   modalBackground: {
     position: 'absolute',
     top: 0,
-    left: 280, // Start after the drawer width
+    left: 320,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
   },
   drawerContent: {
-    width: 280,
-    backgroundColor: 'rgba(0, 0, 0, 0.95)',
+    width: 320,
     height: '100%',
-    paddingTop: 20,
     position: 'absolute',
     left: 0,
     top: 0,
-    shadowColor: '#000',
+    shadowColor: '#fff',
     shadowOffset: {
-      width: 2,
+      width: 0,
       height: 0,
     },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 10,
+    borderTopRightRadius: 20,
+    borderBottomRightRadius: 20,
+    overflow: 'hidden',
+  },
+  gradientBackground: {
+    flex: 1,
+    paddingTop: 20,
   },
   profileHeader: {
-    paddingHorizontal: 20,
-    paddingVertical: 18,
+    paddingHorizontal: 24,
+    paddingVertical: 24,
+    alignItems: 'center',
     borderBottomWidth: 1,
-    borderBottomColor: '#333',
-    backgroundColor: 'rgba(7, 7, 7, 0.84)',
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  profileImageContainer: {
+    marginBottom: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#fff',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
   },
   profileImage: {
-    width: 84,
-    height: 84,
-    borderRadius: 42,
-    alignSelf: 'center',
-    marginBottom: 15,
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
   },
   profileImagePlaceholder: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#333',
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 15,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
   },
   profileImageText: {
     color: '#fff',
-    fontSize: 24,
+    fontSize: 32,
     fontWeight: 'bold',
-    alignSelf: 'center',
   },
   username: {
     color: '#fff',
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 5,
-    alignSelf: 'center',
+    fontSize: 22,
+    fontWeight: '700',
+    marginBottom: 6,
+    letterSpacing: 0.5,
   },
   bio: {
-    color: '#aaa',
+    color: 'rgba(255, 255, 255, 0.7)',
     fontSize: 14,
-    alignSelf: 'center',
+    lineHeight: 20,
+    textAlign: 'center',
   },
   menuItems: {
     flex: 1,
-    paddingTop: 10,
+    paddingTop: 24,
+    paddingHorizontal: 16,
   },
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 15,
-    paddingHorizontal: 20,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderRadius: 16,
+    marginVertical: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   menuItemText: {
     color: '#fff',
     fontSize: 16,
-    marginLeft: 15,
-    fontWeight: '500',
+    marginLeft: 16,
+    fontWeight: '600',
+    letterSpacing: 0.3,
   },
   logoutContainer: {
-    paddingHorizontal: 20,
-    paddingBottom: 20,
+    paddingHorizontal: 24,
+    paddingBottom: 40,
+    paddingTop: 20,
     borderTopWidth: 1,
-    borderTopColor: '#333',
-    paddingTop: 12,
+    borderTopColor: 'rgba(236, 234, 234, 0.03)',
   },
   logoutButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: '#2c2c2c',
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    backgroundColor: 'rgba(255, 71, 87, 0.15)',
     borderRadius: 25,
     borderWidth: 1,
     borderColor: '#ff4757',
+    shadowColor: '#ff4757',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   logoutText: {
     color: '#ff4757',
     fontSize: 16,
-    marginLeft: 10,
-    fontWeight: '500',
+    marginLeft: 12,
+    fontWeight: '600',
+    letterSpacing: 0.3,
   },
 }); 

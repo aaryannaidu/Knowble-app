@@ -59,7 +59,7 @@ interface SearchResults {
 }
 
 // Tab type
-type TabType = 'all' | 'videos' | 'channels' | 'micro_courses';
+type TabType = 'videos' | 'channels' | 'micro_courses';
 
 export default function SearchScreen() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -70,7 +70,7 @@ export default function SearchScreen() {
     counts: {}
   });
   const [isSearching, setIsSearching] = useState(false);
-  const [activeTab, setActiveTab] = useState<TabType>('all');
+  const [activeTab, setActiveTab] = useState<TabType>('videos');
   const [error, setError] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -96,7 +96,7 @@ export default function SearchScreen() {
     try {
       const searchResults = await searchContent(
         searchQuery,
-        activeTab,
+        'all', // Fetch all content types at once
         limit,
         resetOffset ? 0 : offset
       );
@@ -143,24 +143,11 @@ export default function SearchScreen() {
         return results.channels;
       case 'micro_courses':
         return results.micro_courses;
-      case 'all':
       default:
-        return [
-          ...results.videos,
-          ...results.channels,
-          ...results.micro_courses
-        ];
+        return results.videos;
     }
   };
 
-  // Check if current results contain mixed content types (for 'all' tab)
-  const hasMixedContent = () => {
-    return activeTab === 'all' && (
-      results.videos.length > 0 || 
-      results.channels.length > 0 || 
-      results.micro_courses.length > 0
-    );
-  };
 
   // Get count for current tab
   const getCurrentTabCount = () => {
@@ -171,25 +158,15 @@ export default function SearchScreen() {
         return results.counts.channels || 0;
       case 'micro_courses':
         return results.counts.micro_courses || 0;
-      case 'all':
       default:
-        return (
-          (results.counts.videos || 0) +
-          (results.counts.channels || 0) +
-          (results.counts.micro_courses || 0)
-        );
+        return results.counts.videos || 0;
     }
   };
 
   // Handle tab change
   const handleTabChange = (tab: TabType) => {
     setActiveTab(tab);
-    if (searchQuery.trim()) {
-      setOffset(0);
-      setTimeout(() => {
-        handleSearch(true);
-      }, 0);
-    }
+    // No need to refetch data, just filter existing results
   };
 
   // Format view count with K, M, etc.
@@ -231,7 +208,7 @@ export default function SearchScreen() {
   const renderVideoCard = (item: Video, index: number) => {
     // Get the thumbnail URL - try thumbnail_url first, then thumbnail
     const thumbnailUrl = item.thumbnail_url || item.thumbnail;
-    
+
     const handleVideoPress = () => {
       router.push({
         pathname: `/watch/${item.id}` as any,
@@ -242,58 +219,40 @@ export default function SearchScreen() {
       });
     };
 
-    // Use different styles based on whether we're in 2-column layout or not
-    const cardStyle = activeTab === 'videos' 
-      ? styles.videoCard 
-      : [styles.videoCard, styles.videoCardSingleColumn];
-    
-    // Different layouts for single column vs grid
-    const isSingleColumn = activeTab !== 'videos';
-    const thumbnailContainerStyle = isSingleColumn 
-      ? [styles.thumbnailContainer, styles.thumbnailContainerSingleColumn]
-      : styles.thumbnailContainer;
-    const videoInfoStyle = isSingleColumn 
-      ? [styles.videoInfo, styles.videoInfoSingleColumn]
-      : styles.videoInfo;
-
     return (
-      <TouchableOpacity style={cardStyle} onPress={handleVideoPress}>
-        <View style={thumbnailContainerStyle}>
+      <TouchableOpacity style={styles.videoCard} onPress={handleVideoPress}>
+        <View style={styles.thumbnailContainer}>
           {thumbnailUrl ? (
-            <Image 
-              source={{ uri: thumbnailUrl }} 
-              style={styles.thumbnail} 
+            <Image
+              source={{ uri: thumbnailUrl }}
+              style={styles.thumbnail}
               resizeMode="contain"
             />
           ) : (
             <View style={styles.thumbnailPlaceholder}>
-              <Ionicons name="play-circle" size={isSingleColumn ? 30 : 50} color="#58e2bd" />
-              {!isSingleColumn && (
-                <Text style={styles.placeholderText}>{item.title.substring(0, 20)}{item.title.length > 20 ? '...' : ''}</Text>
-              )}
+              <Ionicons name="play-circle" size={50} color="#58e2bd" />
+              <Text style={styles.placeholderText}>{item.title.substring(0, 20)}{item.title.length > 20 ? '...' : ''}</Text>
             </View>
           )}
           <View style={styles.viewsTag}>
             <Text style={styles.viewsText}>{formatViewCount(item.views || 0)} views</Text>
           </View>
         </View>
-        
-        <View style={videoInfoStyle}>
+
+        <View style={styles.videoInfo}>
           <View style={styles.channelInfo}>
-            {!isSingleColumn && (
-              item.creator.profile_picture ? (
-                <Image 
-                  source={{ uri: item.creator.profile_picture }} 
-                  style={styles.channelAvatar} 
-                />
-              ) : (
-                <View style={styles.avatarPlaceholder}>
-                  <Text style={styles.avatarInitial}>{item.creator.username ? item.creator.username.charAt(0).toUpperCase() : 'U'}</Text>
-                </View>
-              )
+            {item.creator.profile_picture ? (
+              <Image
+                source={{ uri: item.creator.profile_picture }}
+                style={styles.channelAvatar}
+              />
+            ) : (
+              <View style={styles.avatarPlaceholder}>
+                <Text style={styles.avatarInitial}>{item.creator.username ? item.creator.username.charAt(0).toUpperCase() : 'U'}</Text>
+              </View>
             )}
             <View style={styles.textContainer}>
-              <Text style={styles.videoTitle} numberOfLines={isSingleColumn ? 2 : 2}>{item.title}</Text>
+              <Text style={styles.videoTitle} numberOfLines={2}>{item.title}</Text>
               <Text style={styles.channelName}>{item.channel.name}</Text>
               <Text style={styles.videoMeta}>{formatTimeAgo(item.created_at)}</Text>
             </View>
@@ -308,21 +267,21 @@ export default function SearchScreen() {
     const handleChannelPress = () => {
       router.push(`/channels/${item.id}` as any);
     };
-    
+
     return (
       <TouchableOpacity style={styles.channelCard} onPress={handleChannelPress}>
         <View style={styles.channelCardContent}>
           {item.avatar ? (
-            <Image 
-              source={{ uri: item.avatar }} 
-              style={styles.channelCardAvatar} 
+            <Image
+              source={{ uri: item.avatar }}
+              style={styles.channelCardAvatar}
             />
           ) : (
             <View style={styles.channelAvatarPlaceholder}>
               <Text style={styles.channelAvatarInitial}>{item.name ? item.name.charAt(0).toUpperCase() : 'C'}</Text>
             </View>
           )}
-          
+
           <View style={styles.channelCardInfo}>
             <View style={styles.channelCardHeader}>
               <Text style={styles.channelCardName}>{item.name}</Text>
@@ -330,11 +289,11 @@ export default function SearchScreen() {
                 <Ionicons name="checkmark-circle" size={16} color="#58e2bd" style={styles.verifiedIcon} />
               )}
             </View>
-            
+
             <Text style={styles.channelCardStats}>
               {formatViewCount(item.total_views || 0)} views • {item.video_count || 0} videos • {formatViewCount(item.subscribers_count)} subscribers
             </Text>
-            
+
             <Text style={styles.channelCardDescription} numberOfLines={2}>
               {item.description || 'No description available'}
             </Text>
@@ -349,25 +308,25 @@ export default function SearchScreen() {
     const handleMicroCoursePress = () => {
       router.push(`/microcourses/${item.id}` as any);
     };
-    
+
     return (
       <TouchableOpacity style={styles.microCourseCard} onPress={handleMicroCoursePress}>
         <View style={styles.microCourseCardContent}>
           <View style={styles.microCourseIconContainer}>
             <Ionicons name="school" size={32} color="#58e2bd" />
           </View>
-          
+
           <View style={styles.microCourseCardInfo}>
             <Text style={styles.microCourseCardName}>{item.name}</Text>
-            
+
             <Text style={styles.microCourseCardStats}>
               {formatViewCount(item.total_views || 0)} views • {item.video_count || 0} videos
             </Text>
-            
+
             <Text style={styles.microCourseCardDescription} numberOfLines={2}>
               {item.description || 'No description available'}
             </Text>
-            
+
             <Text style={styles.microCourseCardChannel}>
               {item.channel.name}
             </Text>
@@ -392,13 +351,13 @@ export default function SearchScreen() {
   // Generate unique key for each item based on its type
   const getItemKey = (item: any, index: number) => {
     if ('title' in item && 'channel' in item) {
-      return `video-${item.id}-${activeTab}`;
+      return `video-${item.id}`;
     } else if ('subscribers_count' in item) {
-      return `channel-${item.id}-${activeTab}`;
+      return `channel-${item.id}`;
     } else if ('name' in item && 'channel' in item) {
-      return `microcourse-${item.id}-${activeTab}`;
+      return `microcourse-${item.id}`;
     }
-    return `unknown-${index}-${activeTab}`;
+    return `unknown-${index}`;
   };
 
   // Render the empty state
@@ -484,35 +443,26 @@ export default function SearchScreen() {
       {/* Tabs */}
       {searchQuery.trim() !== '' && !isSearching && (
         <View style={styles.tabsContainer}>
-          <TouchableOpacity 
-            style={[styles.tab, activeTab === 'all' && styles.activeTab]} 
-            onPress={() => handleTabChange('all')}
-          >
-            <Text style={[styles.tabText, activeTab === 'all' && styles.activeTabText]}>
-              All
-            </Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={[styles.tab, activeTab === 'videos' && styles.activeTab]} 
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'videos' && styles.activeTab]}
             onPress={() => handleTabChange('videos')}
           >
             <Text style={[styles.tabText, activeTab === 'videos' && styles.activeTabText]}>
               Videos ({results.counts.videos || 0})
             </Text>
           </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={[styles.tab, activeTab === 'channels' && styles.activeTab]} 
+
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'channels' && styles.activeTab]}
             onPress={() => handleTabChange('channels')}
           >
             <Text style={[styles.tabText, activeTab === 'channels' && styles.activeTabText]}>
               Channels ({results.counts.channels || 0})
             </Text>
           </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={[styles.tab, activeTab === 'micro_courses' && styles.activeTab]} 
+
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'micro_courses' && styles.activeTab]}
             onPress={() => handleTabChange('micro_courses')}
           >
             <Text style={[styles.tabText, activeTab === 'micro_courses' && styles.activeTabText]}>
@@ -532,9 +482,9 @@ export default function SearchScreen() {
         ListFooterComponent={renderFooter}
         onEndReached={handleLoadMore}
         onEndReachedThreshold={0.3}
+        key={activeTab} // Force re-render when switching between layouts
         numColumns={activeTab === 'videos' ? 2 : 1}
         columnWrapperStyle={activeTab === 'videos' ? styles.columnWrapper : undefined}
-        key={activeTab} // Force re-render when tab changes to update numColumns
       />
     </SafeAreaView>
   );
@@ -602,6 +552,9 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: 8,
   },
+  horizontalResultsList: {
+    paddingHorizontal: 8,
+  },
   // Video card styles
   videoCard: {
     backgroundColor: '#202020',
@@ -618,11 +571,6 @@ const styles = StyleSheet.create({
     height: 300, // Fixed height for grid layout
     width: '48%', // Take up almost half the screen width for 2-column layout
   },
-  videoCardSingleColumn: {
-    width: '100%', // Full width for single column layout in 'All' tab
-    height: 'auto', // Auto height for single column
-    flexDirection: 'row', // Horizontal layout like other cards
-  },
   thumbnailContainer: {
     position: 'relative',
     backgroundColor: '#101010',
@@ -630,12 +578,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden',
-  },
-  thumbnailContainerSingleColumn: {
-    width: 120,
-    height: 80,
-    borderRadius: 8,
-    marginRight: 12,
   },
   thumbnail: {
     width: '100%',
@@ -675,13 +617,6 @@ const styles = StyleSheet.create({
     padding: 12,
     backgroundColor: '#161616',
     flex: 1, // Take remaining space
-  },
-  videoInfoSingleColumn: {
-    backgroundColor: 'transparent',
-    paddingLeft: 0,
-    paddingTop: 0,
-    paddingBottom: 12,
-    flex: 1,
   },
   channelInfo: {
     flexDirection: 'row',
@@ -783,6 +718,64 @@ const styles = StyleSheet.create({
     color: '#ddd',
     fontSize: 14,
   },
+  // Horizontal channel card styles
+  channelCardHorizontal: {
+    backgroundColor: '#202020',
+    borderRadius: 12,
+    padding: 12,
+    marginRight: 12,
+    borderWidth: 1,
+    borderColor: '#333',
+    width: 140,
+    alignItems: 'center',
+  },
+  channelCardContentHorizontal: {
+    alignItems: 'center',
+  },
+  channelCardAvatarHorizontal: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    marginBottom: 8,
+  },
+  channelAvatarPlaceholderHorizontal: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#333',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  channelAvatarInitialHorizontal: {
+    color: 'white',
+    fontSize: 24,
+    fontWeight: 'bold',
+  },
+  channelCardInfoHorizontal: {
+    alignItems: 'center',
+    width: '100%',
+  },
+  channelCardHeaderHorizontal: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  channelCardNameHorizontal: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  verifiedIconHorizontal: {
+    marginLeft: 4,
+  },
+  channelCardStatsHorizontal: {
+    color: '#aaa',
+    fontSize: 12,
+    textAlign: 'center',
+  },
   // Microcourse card styles
   microCourseCard: {
     backgroundColor: '#202020',
@@ -828,6 +821,52 @@ const styles = StyleSheet.create({
     color: '#58e2bd',
     fontSize: 12,
     fontWeight: '500',
+  },
+  // Horizontal microcourse card styles
+  microCourseCardHorizontal: {
+    backgroundColor: '#202020',
+    borderRadius: 12,
+    padding: 12,
+    marginRight: 12,
+    borderWidth: 1,
+    borderColor: '#333',
+    width: 140,
+    alignItems: 'center',
+  },
+  microCourseCardContentHorizontal: {
+    alignItems: 'center',
+  },
+  microCourseIconContainerHorizontal: {
+    width: 50,
+    height: 50,
+    borderRadius: 10,
+    backgroundColor: 'rgba(88, 226, 189, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  microCourseCardInfoHorizontal: {
+    alignItems: 'center',
+    width: '100%',
+  },
+  microCourseCardNameHorizontal: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '500',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  microCourseCardStatsHorizontal: {
+    color: '#aaa',
+    fontSize: 12,
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  microCourseCardChannelHorizontal: {
+    color: '#58e2bd',
+    fontSize: 12,
+    fontWeight: '500',
+    textAlign: 'center',
   },
   // Empty state styles
   emptyState: {
