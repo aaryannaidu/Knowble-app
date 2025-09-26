@@ -2,6 +2,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { loginUser, registerUser, refreshUserToken, getUserProfile } from './api';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
 
 interface AuthContextType {
   user: any | null;
@@ -111,8 +112,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = async () => {
+    // Clear app tokens
     await AsyncStorage.removeItem('access_token');
     await AsyncStorage.removeItem('refresh_token');
+
+    // Proactively sign out from Google so the next login shows the account chooser
+    try {
+      await GoogleSignin.signOut();
+    } catch (err) {
+      console.warn('Google signOut failed (safe to ignore if not signed in):', err);
+    }
+
+    // Optional: revoke access to ensure full disconnect (ignore errors)
+    try {
+      await GoogleSignin.revokeAccess();
+    } catch {}
+
     setUser(null);
     setToken(null);
   };

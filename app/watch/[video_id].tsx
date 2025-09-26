@@ -402,7 +402,6 @@ const VideoPlayer = ({ video, isActive, onUpdateLike, onUpdateSave, onComment, o
   const [isLiking, setIsLiking] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isSubscribed, setIsSubscribed] = useState(video.channel.is_subscribed || false);
-  const [subscribersCount, setSubscribersCount] = useState(video.channel.subscribers_count || 0);
   const [isSubscribing, setIsSubscribing] = useState(false);
   const [playbackPosition, setPlaybackPosition] = useState(0);
   const [playbackDuration, setPlaybackDuration] = useState(0);
@@ -481,8 +480,7 @@ const VideoPlayer = ({ video, isActive, onUpdateLike, onUpdateSave, onComment, o
 
   useEffect(() => {
     setIsSubscribed(video.channel.is_subscribed || false);
-    setSubscribersCount(video.channel.subscribers_count || 0);
-  }, [video.channel.is_subscribed, video.channel.subscribers_count]);
+  }, [video.channel.is_subscribed]);
 
   // Sync view count and reset view tracking when video changes
   useEffect(() => {
@@ -677,38 +675,23 @@ const VideoPlayer = ({ video, isActive, onUpdateLike, onUpdateSave, onComment, o
       setIsSubscribing(true);
       const newIsSubscribed = !isSubscribed;
       setIsSubscribed(newIsSubscribed);
-      setSubscribersCount(prev => newIsSubscribed ? prev + 1 : Math.max(0, prev - 1));
       const response = await toggleSubscription(video.channel.id, token);
-      if (response && response.is_subscribed !== undefined && response.is_subscribed !== newIsSubscribed) {
+      if (response && response.is_subscribed !== undefined) {
         setIsSubscribed(response.is_subscribed);
-        setSubscribersCount(prev => response.is_subscribed ? prev + 1 : Math.max(0, prev - 1));
       }
     } catch (error) {
       console.error('Error toggling subscription:', error);
       setIsSubscribed(!isSubscribed);
-      setSubscribersCount(prev => isSubscribed ? prev + 1 : Math.max(0, prev - 1));
       Alert.alert('Error', 'Failed to update subscription. Please try again.');
     } finally {
       setIsSubscribing(false);
     }
   };
 
-  const formatViewCount = (views: number) => {
-    if (views >= 1000000) return `${(views / 1000000).toFixed(1)}M views`;
-    if (views >= 1000) return `${(views / 1000).toFixed(1)}K views`;
-    return `${views} views`;
-  };
-
   const formatLikeCount = (likes: number) => {
     if (likes >= 1000000) return `${(likes / 1000000).toFixed(1)}M`;
     if (likes >= 1000) return `${(likes / 1000).toFixed(1)}K`;
     return likes.toString();
-  };
-
-  const formatSubscriberCount = (count: number) => {
-    if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`;
-    if (count >= 1000) return `${(count / 1000).toFixed(1)}K`;
-    return count.toString();
   };
 
   const handleChatWithNaidu = () => {
@@ -921,9 +904,6 @@ const VideoPlayer = ({ video, isActive, onUpdateLike, onUpdateSave, onComment, o
             )}
             <View style={styles.channelTextContainer}>
               <Text style={[styles.channelName, styles.highContrastText]}>{video.channel.name}</Text>
-              <Text style={[styles.viewCount, styles.highContrastText]}>
-                {formatViewCount(viewCount)} • {formatSubscriberCount(subscribersCount)} subscribers
-              </Text>
             </View>
             <TouchableOpacity 
               style={[styles.subscribeButton, isSubscribed && styles.unsubscribeButton]}
@@ -1301,6 +1281,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 8,
+    // Ensure top controls sit above bottom overlay for proper touch handling
+    zIndex: 20,
   },
   iconButton: {
     padding: 8,
@@ -1314,6 +1296,8 @@ const styles = StyleSheet.create({
     right: 0,
     top: '45%',
     alignItems: 'center',
+    // Elevate play/pause button above overlays
+    zIndex: 20,
   },
   playPauseButton: {
     backgroundColor: 'rgba(255,255,255,0.9)',
@@ -1344,6 +1328,7 @@ const styles = StyleSheet.create({
   channelTextContainer: {
     flex: 1,
     marginLeft: 12,
+    justifyContent: 'center',
   },
   channelAvatar: {
     width: 40,
@@ -1367,7 +1352,6 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontWeight: '600',
-    textDecorationLine: 'underline',
   },
   viewCount: {
     color: '#aaa',
@@ -1376,9 +1360,9 @@ const styles = StyleSheet.create({
   },
   subscribeButton: {
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
   },
   subscribeText: {
     color: '#000000',

@@ -49,9 +49,9 @@ const LoginScreen = () => {
       const userInfo = await GoogleSignin.signIn();
       console.log('Google Sign-In successful:', userInfo);
 
-      // Get the ID token
-      const tokens = await GoogleSignin.getTokens();
-      const idToken = tokens.idToken;
+      // Prefer ID token from the sign-in response; fallback to getTokens()
+      const idTokenFromUser = (userInfo as any)?.idToken;
+      const idToken = idTokenFromUser || (await GoogleSignin.getTokens()).idToken;
 
       if (!idToken) {
         throw new Error('No ID token received from Google');
@@ -101,6 +101,14 @@ const LoginScreen = () => {
   const handleGoogleSignIn = async () => {
     try {
       setIsGoogleLoading(true);
+
+      // Ensure previous Google session is cleared so the account chooser shows up
+      try {
+        await GoogleSignin.signOut();
+      } catch {}
+      try {
+        await GoogleSignin.revokeAccess();
+      } catch {}
 
       // Step 1: Get Google ID token
       const idToken = await getGoogleIdToken();
