@@ -66,9 +66,6 @@ const VideoCard: React.FC<VideoCardProps> = ({
             <Text style={styles.placeholderText}>{title.substring(0, 20)}{title.length > 20 ? '...' : ''}</Text>
           </View>
         )}
-        <View style={styles.viewsTag}>
-          <Text style={styles.viewsText}>{formatViewCount(views)} views</Text>
-        </View>
       </View>
 
       <View style={styles.videoInfo}>

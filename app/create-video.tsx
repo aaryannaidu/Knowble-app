@@ -15,7 +15,7 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { Video, ResizeMode } from 'expo-av';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import { useRouter } from 'expo-router';
 import { useAuth } from './(auth)/AuthContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -34,6 +34,27 @@ export default function CreateVideoScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [currentStep, setCurrentStep] = useState(1);
   const [videoInfo, setVideoInfo] = useState<{size?: string, duration?: number}>({});
+
+  // Create video player for preview
+  const videoPlayer = useVideoPlayer('', player => {
+    player.loop = false;
+    player.muted = false;
+    try { player.volume = 1; } catch {}
+  });
+
+  // Update video source when video changes
+  useEffect(() => {
+    if (video?.uri) {
+      try {
+        videoPlayer.replace(video.uri);
+        try { videoPlayer.muted = false; } catch {}
+        try { (videoPlayer as any).volume = 1; } catch {}
+        videoPlayer.play();
+      } catch {}
+    } else {
+      try { videoPlayer.pause(); } catch {}
+    }
+  }, [video, videoPlayer]);
 
   // Fetch categories on component mount
   useEffect(() => {
@@ -248,28 +269,28 @@ export default function CreateVideoScreen() {
               Choose an educational video to upload. Videos must be educational and less than 3 minutes long.
             </Text>
             
-            <TouchableOpacity 
-              style={[styles.verticalFrame, styles.verticalUploadZone]} 
-              onPress={pickVideo}
-              activeOpacity={0.8}
-            >
-              {video ? (
-                <Video
-                  source={{ uri: video.uri }}
+            {video ? (
+              <View style={[styles.verticalFrame, styles.verticalUploadZone]}>
+                <VideoView
                   style={styles.verticalMedia}
-                  resizeMode={ResizeMode.COVER}
-                  shouldPlay={false}
-                  isLooping={false}
-                  useNativeControls
+                  player={videoPlayer}
+                  contentFit="contain"
+                  nativeControls={true}
+                  allowsFullscreen
+                  allowsPictureInPicture
                 />
-              ) : (
-                <>
-                  <Ionicons name="cloud-upload" size={38} color="#58e2bd" />
-                  <Text style={styles.uploadText}>Tap to select a video</Text>
-                  <Text style={styles.uploadSubtext}>MP4, MOV, or other video formats</Text>
-                </>
-              )}
-            </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity 
+                style={[styles.verticalFrame, styles.verticalUploadZone]} 
+                onPress={pickVideo}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="cloud-upload" size={38} color="#58e2bd" />
+                <Text style={styles.uploadText}>Tap to select a video</Text>
+                <Text style={styles.uploadSubtext}>MP4, MOV, or other video formats</Text>
+              </TouchableOpacity>
+            )}
 
             {video && (
               <View style={styles.fileInfo}>
@@ -339,7 +360,7 @@ export default function CreateVideoScreen() {
                 activeOpacity={0.8}
               >
                 {thumbnail ? (
-                  <Image source={{ uri: thumbnail.uri }} style={styles.verticalMedia} />
+                  <Image source={{ uri: thumbnail.uri }} style={styles.verticalMedia} resizeMode="contain" />
                 ) : (
                   <>
                     <Ionicons name="image" size={32} color="#58e2bd" />
@@ -406,7 +427,7 @@ export default function CreateVideoScreen() {
               <View style={styles.videoReview}>
                 <View style={styles.videoReviewThumbnail}>
                   {thumbnail ? (
-                    <Image source={{ uri: thumbnail.uri }} style={styles.reviewThumbnailImage} />
+                    <Image source={{ uri: thumbnail.uri }} style={styles.reviewThumbnailImage} resizeMode="contain" />
                   ) : (
                     <View style={styles.reviewThumbnailPlaceholder}>
                       <Ionicons name="videocam" size={24} color="#444" />

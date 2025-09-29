@@ -43,8 +43,8 @@
       [
         "@react-native-google-signin/google-signin",
         { "iosUrlScheme": "com.googleusercontent.apps.238570610028-amf9iue9t4mqihsbras06r0drdlouqgv" }
-      ]
-
+      ],
+      "expo-video"
     ],
     "experiments": {
       "typedRoutes": true

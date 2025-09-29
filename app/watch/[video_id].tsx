@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity, ActivityIndicator, Dimensions, Alert, Animated, FlatList, ScrollView, Easing } from 'react-native';
+import { View, Text, StyleSheet, Image, TouchableOpacity, ActivityIndicator, Dimensions, Alert, Animated, FlatList, ScrollView} from 'react-native';
+import { Slider } from '@miblanchard/react-native-slider';
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, router } from 'expo-router';
-import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
+import { useEvent, useEventListener } from 'expo';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import { useAuth } from '../(auth)/AuthContext';
 import { API_BASE_URL } from '../(auth)/api';  // Assuming API_BASE_URL is imported from api
 import { useFocusEffect } from '@react-navigation/native';
@@ -403,46 +405,87 @@ const VideoPlayer = ({ video, isActive, onUpdateLike, onUpdateSave, onComment, o
   const [isSaving, setIsSaving] = useState(false);
   const [isSubscribed, setIsSubscribed] = useState(video.channel.is_subscribed || false);
   const [isSubscribing, setIsSubscribing] = useState(false);
-  const [playbackPosition, setPlaybackPosition] = useState(0);
-  const [playbackDuration, setPlaybackDuration] = useState(0);
-  const [isScrubbing, setIsScrubbing] = useState(false);
-  const [progressWidth, setProgressWidth] = useState(0);
-  const progressAnimated = useRef(new Animated.Value(0)).current; // 0..1
+  // Animation for like button
+  const likeAnimation = useRef(new Animated.Value(1)).current;
   const [viewCount, setViewCount] = useState(video.views || 0);
   const [hasViewCounted, setHasViewCounted] = useState(false);
   const [isDescriptionSheetOpen, setIsDescriptionSheetOpen] = useState(false);
   
-  // Remember whether the video was playing before the user started scrubbing so we can resume correctly
-  const wasPlayingRef = useRef(false);
-  
+  // Video progress state for slider
+  const [isScrubbing, setIsScrubbing] = useState(false);
+  const [scrubTime, setScrubTime] = useState<number | null>(null);
+  const [durationState, setDurationState] = useState(0);
+
   // Transient controls state
   const [controlsVisible, setControlsVisible] = useState(true);
   const overlayOpacity = useRef(new Animated.Value(1)).current;
   const controlsTimerRef = useRef<NodeJS.Timeout | null>(null);
   const viewCountTimerRef = useRef<number | null>(null);
-
-  const videoRef = useRef<Video>(null);
-  const likeAnimation = useRef(new Animated.Value(1)).current;
   
   // Use the exact same height as FlatList page size to avoid peeking/overlap
   const screenHeight = Dimensions.get('window').height;
+
+  // Get video URL
+  const videoUrl = useMemo(() => {
+    let url = video.video_file_url || (video.video_file && typeof video.video_file === 'string' ? video.video_file : null);
+    if (url && url.startsWith('http:')) {
+      url = url.replace('http:', 'https:');
+    }
+    if (!url) {
+      url = MOCK_VIDEOS[0].video_file_url || '';
+    }
+    return url;
+  }, [video]);
+
+  // expo-video player
+  const player = useVideoPlayer(videoUrl, player => {
+    player.loop = true;
+    player.muted = isMuted;
+  });
+
+  // Get current time (seconds) from player events
+  const [currentTime, setCurrentTime] = useState(0);
+  
+  // Listen to time updates and sync slider when not scrubbing
+  useEventListener(player, 'timeUpdate', (payload) => {
+    if (!isScrubbing && payload && typeof payload.currentTime === 'number') {
+      setCurrentTime(payload.currentTime || 0);
+    }
+  });
+  
+  // Listen for duration change
+  useEventListener(player, 'sourceLoad', (payload) => {
+    if (payload.duration) {
+      setDurationState(payload.duration);
+    }
+  });
+  
+  // Get duration from player directly or from state
+  const duration = player.duration || durationState;
+  
+  // Reflect player events to local state
+  const { isPlaying: playerIsPlaying } = useEvent(player, 'playingChange', { isPlaying: player.playing });
+
+  // Keep local isPlaying in sync
+  useEffect(() => {
+    setIsPlaying(!!playerIsPlaying);
+  }, [playerIsPlaying]);
+
+  // No need for the slider update effect anymore as we handle it in the timeUpdate event
 
   // Pause video when screen loses focus
   useFocusEffect(
     React.useCallback(() => {
       return () => {
         setIsPlaying(false);
-        const currentRef = videoRef.current;
-        if (currentRef) {
-          currentRef.pauseAsync().catch(() => {});
-        }
+        try { player.pause(); } catch {}
         // Clear view count timer
         if (viewCountTimerRef.current) {
           clearTimeout(viewCountTimerRef.current);
           viewCountTimerRef.current = null;
         }
       };
-    }, [])
+    }, [player])
   );
 
   // Transient controls helpers
@@ -466,6 +509,50 @@ const VideoPlayer = ({ video, isActive, onUpdateLike, onUpdateSave, onComment, o
     } else {
       showControlsTemporarily();
     }
+  };
+
+  // Format time for display (expects seconds)
+  const formatTime = (timeInSeconds: number) => {
+    if (!isNaN(timeInSeconds) && timeInSeconds > 0) {
+      const totalSeconds = Math.floor(timeInSeconds);
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = totalSeconds % 60;
+      return `${minutes < 10 ? '0' : ''}${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+    }
+    return '00:00';
+  };
+
+  // Handle slider value change during scrubbing (seconds)
+  const handleSliderChange = (value: number | number[]) => {
+    const newValue = Array.isArray(value) ? value[0] : value;
+    setScrubTime(newValue);
+    setCurrentTime(newValue); // Preview current time while dragging
+  };
+
+  // Handle seeking when user starts sliding
+  const handleSlidingStart = () => {
+    setIsScrubbing(true);
+    setScrubTime(currentTime);
+    showControlsTemporarily(5000); // Keep controls visible longer while scrubbing
+  };
+
+  // Handle seeking when user finishes sliding (seconds)
+  const handleSlidingComplete = (value: number | number[]) => {
+    const seekTime = Array.isArray(value) ? value[0] : value;
+    const clamped = Math.max(0, Math.min(seekTime, duration || 0));
+    
+    try {
+      if (duration && clamped <= duration) {
+        setCurrentTime(clamped);
+        player.currentTime = clamped;
+      }
+    } catch (error) {
+      console.error('Error seeking:', error);
+    }
+    
+    setIsScrubbing(false);
+    setScrubTime(null);
+    showControlsTemporarily();
   };
 
   // Sync local state with incoming props
@@ -493,31 +580,19 @@ const VideoPlayer = ({ video, isActive, onUpdateLike, onUpdateSave, onComment, o
   useEffect(() => {
     if (isActive) {
       // Reset progress when switching to a new video
-      setPlaybackPosition(0);
-      setPlaybackDuration(0);
-      setTimeout(() => setIsPlaying(true), 100);
+      setCurrentTime(0);
+      setScrubTime(null);
+      setTimeout(() => {
+        try { player.play(); } catch {}
+      }, 100);
       showControlsTemporarily();
     } else {
       setIsPlaying(false);
-      const currentRef = videoRef.current;
-      if (currentRef) {
-        currentRef.pauseAsync();
-      }
+      try { player.pause(); } catch {}
     }
-  }, [isActive, showControlsTemporarily]);
+  }, [isActive, showControlsTemporarily, player]);
 
-  // Smoothly animate progress when playback updates
-  useEffect(() => {
-    if (!isScrubbing && playbackDuration > 0) {
-      const ratio = Math.max(0, Math.min(1, playbackPosition / playbackDuration));
-      Animated.timing(progressAnimated, {
-        toValue: ratio,
-        duration: 120,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: false,
-      }).start();
-    }
-  }, [playbackPosition, playbackDuration, isScrubbing, progressAnimated]);
+  // Native controls show progress, no extra animation needed
 
   // Handle view count increment - start timer when video becomes active and is playing
   useEffect(() => {
@@ -564,24 +639,14 @@ const VideoPlayer = ({ video, isActive, onUpdateLike, onUpdateSave, onComment, o
   // Navigate to channel and pause video first
   const handleOpenChannel = () => {
     setIsPlaying(false);
-    const currentRef = videoRef.current;
-    if (currentRef) {
-      currentRef.pauseAsync().catch(() => {});
-    }
+    try { player.pause(); } catch {}
     router.push(`/channels/${video.channel.id}`);
   };
 
-  // Get video URL
-  const videoUrl = useMemo(() => {
-    let url = video.video_file_url || (video.video_file && typeof video.video_file === 'string' ? video.video_file : null);
-    if (url && url.startsWith('http:')) {
-      url = url.replace('http:', 'https:');
-    }
-    if (!url) {
-      url = MOCK_VIDEOS[0].video_file_url || '';
-    }
-    return url;
-  }, [video]);
+  // Keep mute in sync
+  useEffect(() => {
+    try { player.muted = isMuted; } catch {}
+  }, [player, isMuted]);
 
   const handleLike = async () => {
     if (!user || !token) {
@@ -703,59 +768,13 @@ const VideoPlayer = ({ video, isActive, onUpdateLike, onUpdateSave, onComment, o
 
   return (
     <View style={[styles.videoContainer, { height: screenHeight }]}> 
-      <Video
-        ref={videoRef}
+      <VideoView
         style={styles.video}
-        source={{ uri: videoUrl }}
-        resizeMode={ResizeMode.CONTAIN}
-        isLooping
-        shouldPlay={isPlaying && isActive}
-        isMuted={isMuted}
-        useNativeControls={false}
-        onError={(error) => {
-          console.error('Video loading error:', error);
-          const currentRef = videoRef.current;
-          if (currentRef) {
-            currentRef.loadAsync({ uri: videoUrl }, {}, false)
-              .catch(reloadError => {
-                console.error('Video reload failed:', reloadError);
-              });
-          }
-        }}
-        onPlaybackStatusUpdate={(status: AVPlaybackStatus) => {
-          if (status.isLoaded) {
-            setIsPlaying(status.isPlaying);
-            // Update progress only when not scrubbing to avoid jumping
-            if (!isScrubbing) {
-              const currentPos = status.positionMillis ?? 0;
-              const duration = status.durationMillis ?? 0;
-              
-              // Clamp position to duration to prevent overflow
-              const clampedPos = duration > 0 ? Math.min(currentPos, duration) : currentPos;
-              
-              setPlaybackPosition(clampedPos);
-              if (duration > 0) {
-                setPlaybackDuration(duration);
-              }
-            }
-          }
-        }}
-        onLoad={(status) => {
-          const currentRef = videoRef.current;
-          if (currentRef) {
-            currentRef.setStatusAsync({
-              shouldPlay: isPlaying && isActive,
-              isMuted: isMuted,
-              isLooping: true,
-            });
-            // Initialize with actual video duration if available
-            if (status.isLoaded) {
-              setPlaybackPosition(0);
-              setPlaybackDuration(status.durationMillis ?? 0);
-            }
-          }
-        }}
-        positionMillis={isActive ? undefined : 0}
+        player={player}
+        nativeControls={false}
+        allowsFullscreen
+        allowsPictureInPicture
+        contentFit="contain"
       />
 
       {/* Tap area: show/hide controls (Twitter/X-like) */}
@@ -777,7 +796,7 @@ const VideoPlayer = ({ video, isActive, onUpdateLike, onUpdateSave, onComment, o
             onPress={() => { 
               const newMutedState = !isMuted;
               setIsMuted(newMutedState);
-              videoRef.current?.setStatusAsync({ isMuted: newMutedState }).catch(console.error);
+              try { player.muted = newMutedState; } catch (e) { console.error(e); }
               showControlsTemporarily(); 
             }} 
             style={styles.iconButton}
@@ -793,9 +812,9 @@ const VideoPlayer = ({ video, isActive, onUpdateLike, onUpdateSave, onComment, o
               const newPlayingState = !isPlaying;
               setIsPlaying(newPlayingState);
               if (newPlayingState) {
-                videoRef.current?.playAsync().catch(console.error);
+                try { player.play(); } catch (e) { console.error(e); }
               } else {
-                videoRef.current?.pauseAsync().catch(console.error);
+                try { player.pause(); } catch (e) { console.error(e); }
               }
               showControlsTemporarily();
             }}
@@ -807,82 +826,29 @@ const VideoPlayer = ({ video, isActive, onUpdateLike, onUpdateSave, onComment, o
 
         {/* Bottom content overlay */}
         <BlurView intensity={22} tint="dark" style={[styles.bottomOverlay, { paddingBottom: (insets.bottom || 0) + 10 }]}>
-          {/* Seekable progress bar (Twitter-like) */}
-          <View
-            style={styles.progressContainer}
-            onLayout={(e) => setProgressWidth(e.nativeEvent.layout.width)}
-            onStartShouldSetResponder={() => true}
-            onMoveShouldSetResponder={() => true}
-            onResponderGrant={(e) => {
-              // Pause video and store playing state when scrubbing starts
-              wasPlayingRef.current = isPlaying;
-              if (isPlaying) {
-                setIsPlaying(false);
-                videoRef.current?.pauseAsync();
-              }
-
-              setIsScrubbing(true);
-              const x = e.nativeEvent.locationX;
-              if (progressWidth > 0 && playbackDuration > 0) {
-                const ratio = Math.max(0, Math.min(1, x / progressWidth));
-                const newPos = ratio * playbackDuration;
-                progressAnimated.setValue(ratio);
-                setPlaybackPosition(newPos);
-              }
-            }}
-            onResponderMove={(e) => {
-              const x = e.nativeEvent.locationX;
-              if (progressWidth === 0 || playbackDuration === 0) return;
-              const ratio = Math.max(0, Math.min(1, x / progressWidth));
-              const newPos = ratio * playbackDuration;
-              progressAnimated.setValue(ratio);
-              setPlaybackPosition(newPos);
-            }}
-            onResponderRelease={(e) => {
-              const x = e.nativeEvent.locationX;
-              let newPos = playbackPosition;
-              if (progressWidth > 0 && playbackDuration > 0) {
-                const ratio = Math.max(0, Math.min(1, x / progressWidth));
-                newPos = ratio * playbackDuration;
-                setPlaybackPosition(newPos);
-              }
-
-              // Seek to final position and resume if it was playing
-              videoRef.current?.setPositionAsync(newPos, { toleranceMillisBefore: 0, toleranceMillisAfter: 0 })
-                .finally(() => {
-                  if (wasPlayingRef.current) {
-                    videoRef.current?.playAsync();
-                    setIsPlaying(true);
-                  }
-                  setIsScrubbing(false);
-                });
-
-              showControlsTemporarily();
-            }}
-          >
-            <View style={styles.progressTrack}>
-              <Animated.View
-                style={[
-                  styles.progressFill,
-                  {
-                    width: progressWidth > 0
-                      ? progressAnimated.interpolate({ inputRange: [0, 1], outputRange: [0, progressWidth] })
-                      : 0,
-                  },
-                ]}
-              />
-            </View>
-            <Animated.View
-              style={[
-                styles.progressHandle,
-                {
-                  left:
-                    progressWidth > 0
-                      ? progressAnimated.interpolate({ inputRange: [0, 1], outputRange: [-8, Math.max(0, progressWidth - 8)] })
-                      : -8,
-                },
-              ]}
+          {/* Custom Progress Slider */}
+          <View style={styles.progressContainer}>
+            <Slider
+              containerStyle={styles.slider}
+              minimumValue={0}
+              maximumValue={Math.max(1, duration || 1)}
+              value={isScrubbing && scrubTime !== null ? scrubTime : currentTime}
+              onValueChange={handleSliderChange}
+              onSlidingStart={handleSlidingStart}
+              onSlidingComplete={handleSlidingComplete}
+              minimumTrackTintColor="#FFFFFF"
+              maximumTrackTintColor="rgba(255, 255, 255, 0.3)"
+              thumbStyle={styles.sliderThumb}
+              trackStyle={styles.sliderTrack}
+              thumbTouchSize={{ width: 40, height: 40 }}
+              animateTransitions
+              renderThumbComponent={() => (
+                <View style={styles.customThumb} />
+              )}
             />
+            <Text style={[styles.timeText, styles.highContrastText]}>
+              {formatTime(isScrubbing && scrubTime !== null ? scrubTime : currentTime)}
+            </Text>
           </View>
           {/* Channel info */}
           <TouchableOpacity 
@@ -1243,31 +1209,43 @@ const styles = StyleSheet.create({
     backgroundColor: '#000',
   },
   progressContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 2,
     paddingBottom: 10,
-  },
-  progressTrack: {
     width: '100%',
-    height: 2,
-    backgroundColor: 'rgba(255, 255, 255, 0.22)',
-    borderRadius: 999,
-    overflow: 'hidden',
   },
-  progressFill: {
-    height: 2,
-    backgroundColor: ACCENT_COLOR,
+  timeText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '500',
+    minWidth: 40,
+    textAlign: 'center',
   },
-  progressHandle: {
-    position: 'absolute',
-    bottom: -4,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+  slider: {
+    flex: 1,
+    marginHorizontal: 10,
+    height: 20,
+  },
+  sliderTrack: {
+    height: 3,
+    borderRadius: 1.5,
+  },
+  sliderThumb: {
+    backgroundColor: 'transparent', // Make invisible since we use customThumb
+    width: 1,
+    height: 1,
+  },
+  customThumb: {
+    width: 14, // Slightly larger for better visibility
+    height: 14,
+    borderRadius: 7,
     backgroundColor: ACCENT_COLOR,
     shadowColor: '#000',
-    shadowOpacity: 0.3,
-    shadowRadius: 2,
+    shadowOpacity: 0.4,
+    shadowRadius: 3,
     shadowOffset: { width: 0, height: 1 },
+    elevation: 3, // For Android shadow
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
