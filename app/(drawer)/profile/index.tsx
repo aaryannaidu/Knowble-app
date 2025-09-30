@@ -191,6 +191,14 @@ const ProfileScreen = () => {
       >
         {/* Profile Header - YouTube Style */}
         <View style={styles.header}>
+          {/* Back Button */}
+          <View style={styles.backButtonContainer}>
+            <TouchableOpacity onPress={() => router.push('/')} style={styles.backButton}>
+              <Ionicons name="arrow-back" size={24} color="#58e2bd" />
+              <Text style={styles.backButtonText}>Home</Text>
+            </TouchableOpacity>
+          </View>
+
           <View style={styles.profileHeaderContent}>
             {/* Profile Image on Left */}
             <View style={styles.profileImageContainer}>
@@ -316,6 +324,24 @@ const styles = StyleSheet.create({
     backgroundColor: '#202020',
     borderBottomWidth: 1,
     borderBottomColor: '#333',
+  },
+  backButtonContainer: {
+    marginBottom: 10,
+  },
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: 'rgba(88, 226, 189, 0.1)',
+    alignSelf: 'flex-start',
+  },
+  backButtonText: {
+    color: '#58e2bd',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
   },
   profileHeaderContent: {
     flexDirection: 'row',

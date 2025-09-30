@@ -413,8 +413,8 @@ const VideoPlayer = ({ video, isActive, onUpdateLike, onUpdateSave, onComment, o
   
   // Video progress state for slider
   const [isScrubbing, setIsScrubbing] = useState(false);
-  const [scrubTime, setScrubTime] = useState<number | null>(null);
-  const [durationState, setDurationState] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [validDuration, setValidDuration] = useState<number>(0);
 
   // Transient controls state
   const [controlsVisible, setControlsVisible] = useState(true);
@@ -441,27 +441,56 @@ const VideoPlayer = ({ video, isActive, onUpdateLike, onUpdateSave, onComment, o
   const player = useVideoPlayer(videoUrl, player => {
     player.loop = true;
     player.muted = isMuted;
+    // Update more frequently for smoother tracking
+    player.timeUpdateEventInterval = 0.1; // 100ms updates for smoother UI
   });
 
-  // Get current time (seconds) from player events
-  const [currentTime, setCurrentTime] = useState(0);
-  
   // Listen to time updates and sync slider when not scrubbing
   useEventListener(player, 'timeUpdate', (payload) => {
+    // Skip updates while scrubbing to avoid conflicts
     if (!isScrubbing && payload && typeof payload.currentTime === 'number') {
-      setCurrentTime(payload.currentTime || 0);
+      const time = payload.currentTime;
+      // Only update if time is valid and positive
+      if (time >= 0 && !isNaN(time) && isFinite(time)) {
+        setCurrentTime(time);
+        
+        // Try to capture duration from player if we don't have it yet
+        if (validDuration === 0 && player.duration > 0 && isFinite(player.duration)) {
+          setValidDuration(player.duration);
+        }
+      }
     }
   });
   
-  // Listen for duration change
+  // Reset on source load and capture initial duration
   useEventListener(player, 'sourceLoad', (payload) => {
-    if (payload.duration) {
-      setDurationState(payload.duration);
+    // Reset state
+    setCurrentTime(0);
+    setIsScrubbing(false);
+    
+    // Validate duration - check if it's a valid positive finite number
+    if (payload && typeof payload.duration === 'number' && 
+        payload.duration > 0 && 
+        isFinite(payload.duration) && 
+        !isNaN(payload.duration)) {
+      setValidDuration(payload.duration);
+      console.log('Video loaded with valid duration:', payload.duration.toFixed(2), 'seconds');
+    } else {
+      console.warn('Invalid duration in sourceLoad, will try to get it later');
+      setValidDuration(0);
     }
   });
   
-  // Get duration from player directly or from state
-  const duration = player.duration || durationState;
+  // Also listen to status changes to capture duration when video is ready
+  useEventListener(player, 'statusChange', ({ status }) => {
+    if (status === 'readyToPlay' && validDuration === 0) {
+      // Try to get duration when video is ready to play
+      if (player.duration > 0 && isFinite(player.duration) && !isNaN(player.duration)) {
+        setValidDuration(player.duration);
+        console.log('Duration captured from readyToPlay status:', player.duration.toFixed(2), 'seconds');
+      }
+    }
+  });
   
   // Reflect player events to local state
   const { isPlaying: playerIsPlaying } = useEvent(player, 'playingChange', { isPlaying: player.playing });
@@ -513,7 +542,7 @@ const VideoPlayer = ({ video, isActive, onUpdateLike, onUpdateSave, onComment, o
 
   // Format time for display (expects seconds)
   const formatTime = (timeInSeconds: number) => {
-    if (!isNaN(timeInSeconds) && timeInSeconds > 0) {
+    if (!isNaN(timeInSeconds) && timeInSeconds >= 0) {
       const totalSeconds = Math.floor(timeInSeconds);
       const minutes = Math.floor(totalSeconds / 60);
       const seconds = totalSeconds % 60;
@@ -522,37 +551,54 @@ const VideoPlayer = ({ video, isActive, onUpdateLike, onUpdateSave, onComment, o
     return '00:00';
   };
 
-  // Handle slider value change during scrubbing (seconds)
+  // Handle slider value change during scrubbing
   const handleSliderChange = (value: number | number[]) => {
-    const newValue = Array.isArray(value) ? value[0] : value;
-    setScrubTime(newValue);
-    setCurrentTime(newValue); // Preview current time while dragging
-  };
-
-  // Handle seeking when user starts sliding
-  const handleSlidingStart = () => {
-    setIsScrubbing(true);
-    setScrubTime(currentTime);
-    showControlsTemporarily(5000); // Keep controls visible longer while scrubbing
-  };
-
-  // Handle seeking when user finishes sliding (seconds)
-  const handleSlidingComplete = (value: number | number[]) => {
-    const seekTime = Array.isArray(value) ? value[0] : value;
-    const clamped = Math.max(0, Math.min(seekTime, duration || 0));
+    if (!isScrubbing || validDuration === 0) return;
     
-    try {
-      if (duration && clamped <= duration) {
-        setCurrentTime(clamped);
-        player.currentTime = clamped;
-      }
-    } catch (error) {
-      console.error('Error seeking:', error);
+    const newTime = Array.isArray(value) ? value[0] : value;
+    // Clamp to valid range
+    const clampedTime = Math.max(0, Math.min(newTime, validDuration));
+    // Only update display time during scrubbing, don't actually seek yet
+    setCurrentTime(clampedTime);
+  };
+
+  // Start scrubbing
+  const handleSlidingStart = () => {
+    if (validDuration === 0) return; // Don't allow scrubbing if duration is invalid
+    setIsScrubbing(true);
+    showControlsTemporarily(5000);
+  };
+
+  // Seek to the selected position when user releases the slider
+  const handleSlidingComplete = (value: number | number[]) => {
+    // Don't seek if duration is invalid
+    if (validDuration === 0) {
+      console.warn('Cannot seek: duration not available yet');
+      setIsScrubbing(false);
+      return;
     }
     
-    setIsScrubbing(false);
-    setScrubTime(null);
-    showControlsTemporarily();
+    const seekTime = Array.isArray(value) ? value[0] : value;
+    
+    // Ensure time is within bounds
+    const clampedTime = Math.max(0, Math.min(seekTime, validDuration));
+    
+    try {
+      // Log the seek operation
+      console.log(`Seeking to ${clampedTime.toFixed(2)}s of ${validDuration.toFixed(2)}s`);
+      
+      // Seek the video - this is the crucial operation that moves the video position
+      player.currentTime = clampedTime;
+      
+      // Update UI state
+      setCurrentTime(clampedTime);
+    } catch (error) {
+      console.error('Error seeking:', error);
+    } finally {
+      // Always exit scrubbing mode
+      setIsScrubbing(false);
+      showControlsTemporarily();
+    }
   };
 
   // Sync local state with incoming props
@@ -579,9 +625,9 @@ const VideoPlayer = ({ video, isActive, onUpdateLike, onUpdateSave, onComment, o
   // Auto play/pause based on active state
   useEffect(() => {
     if (isActive) {
-      // Reset progress when switching to a new video
       setCurrentTime(0);
-      setScrubTime(null);
+      setValidDuration(0); // Reset duration when switching videos
+      setIsScrubbing(false);
       setTimeout(() => {
         try { player.play(); } catch {}
       }, 100);
@@ -772,7 +818,6 @@ const VideoPlayer = ({ video, isActive, onUpdateLike, onUpdateSave, onComment, o
         style={styles.video}
         player={player}
         nativeControls={false}
-        allowsFullscreen
         allowsPictureInPicture
         contentFit="contain"
       />
@@ -827,29 +872,32 @@ const VideoPlayer = ({ video, isActive, onUpdateLike, onUpdateSave, onComment, o
         {/* Bottom content overlay */}
         <BlurView intensity={22} tint="dark" style={[styles.bottomOverlay, { paddingBottom: (insets.bottom || 0) + 10 }]}>
           {/* Custom Progress Slider */}
-          <View style={styles.progressContainer}>
-            <Slider
-              containerStyle={styles.slider}
-              minimumValue={0}
-              maximumValue={Math.max(1, duration || 1)}
-              value={isScrubbing && scrubTime !== null ? scrubTime : currentTime}
-              onValueChange={handleSliderChange}
-              onSlidingStart={handleSlidingStart}
-              onSlidingComplete={handleSlidingComplete}
-              minimumTrackTintColor="#FFFFFF"
-              maximumTrackTintColor="rgba(255, 255, 255, 0.3)"
-              thumbStyle={styles.sliderThumb}
-              trackStyle={styles.sliderTrack}
-              thumbTouchSize={{ width: 40, height: 40 }}
-              animateTransitions
-              renderThumbComponent={() => (
-                <View style={styles.customThumb} />
-              )}
-            />
-            <Text style={[styles.timeText, styles.highContrastText]}>
-              {formatTime(isScrubbing && scrubTime !== null ? scrubTime : currentTime)}
-            </Text>
-          </View>
+          {validDuration > 0 && (
+            <View style={styles.progressContainer}>
+              <Slider
+                containerStyle={styles.slider}
+                minimumValue={0}
+                maximumValue={validDuration}
+                value={Math.min(currentTime, validDuration)}
+                onValueChange={handleSliderChange}
+                onSlidingStart={handleSlidingStart}
+                onSlidingComplete={handleSlidingComplete}
+                minimumTrackTintColor="#FFFFFF"
+                maximumTrackTintColor="rgba(255, 255, 255, 0.3)"
+                thumbStyle={styles.sliderThumb}
+                trackStyle={styles.sliderTrack}
+                thumbTouchSize={{ width: 40, height: 40 }}
+                animateTransitions={!isScrubbing}
+                disabled={validDuration === 0}
+                renderThumbComponent={() => (
+                  <View style={styles.customThumb} />
+                )}
+              />
+              <Text style={[styles.timeText, styles.highContrastText]}>
+                {formatTime(currentTime)} / {formatTime(validDuration)}
+              </Text>
+            </View>
+          )}
           {/* Channel info */}
           <TouchableOpacity 
             style={styles.channelInfo}
